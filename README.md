@@ -40,7 +40,7 @@ Following the official [Eigen installation](eigen.tuxfamily.org/index.php?title=
 sudo apt-get install libeigen3-dev
 ```
 ## **2.3. ceres-solver (version>=2.1)**
-Please kindly install ceres-solver by following the guide on [ceres Installation](http://ceres-solver.org/installation.html). Notice that the version of ceres-solver should higher than [ceres-solver 2.1.0](https://github.com/ceres-solver/ceres-solver/releases/tag/2.1.0)
+Please kindly install ceres-solver by following the guide on [ceres Installation](http://ceres-solver.org/installation.html). Notice that the version of ceres-solver should be higher than [ceres-solver 2.1.0](https://github.com/ceres-solver/ceres-solver/releases/tag/2.1.0)
 
 ## **2.4. GTSAM**
 Following the official [GTSAM installation](https://gtsam.org/get_started/), or directly install GTSAM 4.x stable release by:
