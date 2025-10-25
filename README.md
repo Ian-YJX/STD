@@ -101,7 +101,7 @@ Then, you should modify the **demo_livox.launch** file
 - Set the **pose_path** to your local path
 ```
 cd $STD_ROS_DIR
-source deve/setup.bash
+source devel/setup.bash
 roslaunch std_detector demo_livox.launch
 ```
 ## **3.3. Example-3: loop closure correction on the KITTI Odometry dataset**
