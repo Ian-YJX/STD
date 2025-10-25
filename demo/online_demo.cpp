@@ -30,19 +30,22 @@ std::mutex odom_mtx;
 std::queue<sensor_msgs::PointCloud2::ConstPtr> laser_buffer;
 std::queue<nav_msgs::Odometry::ConstPtr> odom_buffer;
 
-void laserCloudHandler(const sensor_msgs::PointCloud2::ConstPtr &msg) {
+void laserCloudHandler(const sensor_msgs::PointCloud2::ConstPtr &msg)
+{
   std::unique_lock<std::mutex> lock(laser_mtx);
 
   laser_buffer.push(msg);
 }
 
-void OdomHandler(const nav_msgs::Odometry::ConstPtr &msg) {
+void OdomHandler(const nav_msgs::Odometry::ConstPtr &msg)
+{
   std::unique_lock<std::mutex> lock(odom_mtx);
 
   odom_buffer.push(msg);
 }
 
-bool syncPackages(PointCloud::Ptr &cloud, Eigen::Affine3d &pose) {
+bool syncPackages(PointCloud::Ptr &cloud, Eigen::Affine3d &pose)
+{
   if (laser_buffer.empty() || odom_buffer.empty())
     return false;
 
@@ -53,7 +56,8 @@ bool syncPackages(PointCloud::Ptr &cloud, Eigen::Affine3d &pose) {
   double odom_timestamp = odom_msg->header.stamp.toSec();
 
   // check if timestamps are matched
-  if (abs(odom_timestamp - laser_timestamp) < 1e-3) {
+  if (abs(odom_timestamp - laser_timestamp) < 1e-3)
+  {
     pcl::fromROSMsg(*laser_msg, *cloud);
 
     Eigen::Quaterniond r(
@@ -72,14 +76,17 @@ bool syncPackages(PointCloud::Ptr &cloud, Eigen::Affine3d &pose) {
 
     laser_buffer.pop();
     odom_buffer.pop();
-
-  } else if (odom_timestamp < laser_timestamp) {
+  }
+  else if (odom_timestamp < laser_timestamp)
+  {
     ROS_WARN("Current odometry is earlier than laser scan, discard one "
              "odometry data.");
     std::unique_lock<std::mutex> o_lock(odom_mtx);
     odom_buffer.pop();
     return false;
-  } else {
+  }
+  else
+  {
     ROS_WARN(
         "Current laser scan is earlier than odometry, discard one laser scan.");
     std::unique_lock<std::mutex> l_lock(laser_mtx);
@@ -91,12 +98,14 @@ bool syncPackages(PointCloud::Ptr &cloud, Eigen::Affine3d &pose) {
 }
 
 void update_poses(const gtsam::Values &estimates,
-                  std::vector<Eigen::Affine3d> &poses) {
+                  std::vector<Eigen::Affine3d> &poses)
+{
   assert(estimates.size() == poses.size());
 
   poses.clear();
 
-  for (int i = 0; i < estimates.size(); ++i) {
+  for (int i = 0; i < estimates.size(); ++i)
+  {
     auto est = estimates.at<gtsam::Pose3>(i);
     Eigen::Affine3d est_affine3d(est.matrix());
     poses.push_back(est_affine3d);
@@ -106,7 +115,8 @@ void update_poses(const gtsam::Values &estimates,
 void visualizeLoopClosure(
     const ros::Publisher &publisher,
     const std::vector<std::pair<int, int>> &loop_container,
-    const std::vector<Eigen::Affine3d> &key_pose_vec) {
+    const std::vector<Eigen::Affine3d> &key_pose_vec)
+{
   if (loop_container.empty())
     return;
 
@@ -143,7 +153,8 @@ void visualizeLoopClosure(
   markerEdge.color.a = 1;
 
   // 遍历闭环
-  for (auto it = loop_container.begin(); it != loop_container.end(); ++it) {
+  for (auto it = loop_container.begin(); it != loop_container.end(); ++it)
+  {
     int key_cur = it->first;
     int key_pre = it->second;
     geometry_msgs::Point p;
@@ -164,7 +175,8 @@ void visualizeLoopClosure(
   publisher.publish(markerArray);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
   ros::init(argc, argv, "online_demo");
   ros::NodeHandle nh;
 
@@ -201,7 +213,7 @@ int main(int argc, char **argv) {
   ros::Subscriber subLaserCloud = nh.subscribe<sensor_msgs::PointCloud2>(
       "/cloud_registered_body", 100, laserCloudHandler);
   ros::Subscriber subOdom =
-      nh.subscribe<nav_msgs::Odometry>("/Odometry", 100, OdomHandler);
+      nh.subscribe<nav_msgs::Odometry>("/aft_mapped_to_init", 100, OdomHandler);
 
   STDescManager *std_manager = new STDescManager(config_setting);
 
@@ -249,13 +261,15 @@ int main(int argc, char **argv) {
 
   Eigen::Affine3d last_pose;
   last_pose.setIdentity();
-  while (ros::ok()) {
+  while (ros::ok())
+  {
     ros::spinOnce();
 
     PointCloud::Ptr current_cloud_body(new PointCloud);
     PointCloud::Ptr current_cloud_world(new PointCloud);
     Eigen::Affine3d pose;
-    if (syncPackages(current_cloud_body, pose)) {
+    if (syncPackages(current_cloud_body, pose))
+    {
       auto origin_estimate_affine3d = pose;
       pcl::transformPointCloud(*current_cloud_body, *current_cloud_world, pose);
       down_sampling_voxel(*current_cloud_world, config_setting.ds_size_);
@@ -287,10 +301,13 @@ int main(int argc, char **argv) {
       *key_cloud += *current_cloud_world;
       initial.insert(cloudInd, gtsam::Pose3(pose.matrix()));
 
-      if (!cloudInd) {
+      if (!cloudInd)
+      {
         graph.add(gtsam::PriorFactor<gtsam::Pose3>(
             0, gtsam::Pose3(pose.matrix()), odometryNoise));
-      } else {
+      }
+      else
+      {
         auto prev_pose = gtsam::Pose3(origin_pose_vec[cloudInd - 1].matrix());
         auto curr_pose = gtsam::Pose3(pose.matrix());
         graph.add(gtsam::BetweenFactor<gtsam::Pose3>(
@@ -299,7 +316,8 @@ int main(int argc, char **argv) {
       }
 
       // check if keyframe
-      if (cloudInd % config_setting.sub_frame_num_ == 0 && cloudInd != 0) {
+      if (cloudInd % config_setting.sub_frame_num_ == 0 && cloudInd != 0)
+      {
         ROS_INFO("key frame idx: [%d], key cloud size: [%d]", (int)keyCloudInd,
                  (int)key_cloud->size());
         // step1. Descriptor Extraction
@@ -313,7 +331,8 @@ int main(int argc, char **argv) {
         loop_transform.second = Eigen::Matrix3d::Identity();
         std::vector<std::pair<STDesc, STDesc>> loop_std_pair;
 
-        if (keyCloudInd > config_setting.skip_near_num_) {
+        if (keyCloudInd > config_setting.skip_near_num_)
+        {
           std_manager->SearchLoop(stds_vec, search_result, loop_transform,
                                   loop_std_pair);
         }
@@ -332,7 +351,8 @@ int main(int argc, char **argv) {
 
         std_manager->key_cloud_vec_.push_back(key_cloud->makeShared());
 
-        if (search_result.first > 0) {
+        if (search_result.first > 0)
+        {
           std::cout << "[Loop Detection] triggle loop: " << keyCloudInd << "--"
                     << search_result.first << ", score:" << search_result.second
                     << std::endl;
@@ -361,7 +381,8 @@ int main(int argc, char **argv) {
 
           */
           int sub_frame_num = config_setting.sub_frame_num_;
-          for (size_t j = 1; j <= sub_frame_num; j++) {
+          for (size_t j = 1; j <= sub_frame_num; j++)
+          {
             int src_frame = cloudInd + j - sub_frame_num;
 
             auto delta_T = Eigen::Affine3d::Identity();
@@ -401,7 +422,8 @@ int main(int argc, char **argv) {
       isam.update(graph, initial);
       isam.update();
 
-      if (has_loop_flag) {
+      if (has_loop_flag)
+      {
         isam.update();
         isam.update();
         isam.update();
@@ -417,10 +439,12 @@ int main(int argc, char **argv) {
 
       auto latest_estimate_affine3d = pose_vec.back();
 
-      if (has_loop_flag) {
+      if (has_loop_flag)
+      {
         // publish correct cloud map
         PointCloud full_map;
-        for (int i = 0; i < pose_vec.size(); ++i) {
+        for (int i = 0; i < pose_vec.size(); ++i)
+        {
           PointCloud correct_cloud;
           pcl::transformPointCloud(*cloud_vec[i], correct_cloud, pose_vec[i]);
           full_map += correct_cloud;
@@ -432,7 +456,8 @@ int main(int argc, char **argv) {
 
         // publish corerct path
         nav_msgs::Path correct_path;
-        for (int i = 0; i < pose_vec.size(); i += 1) {
+        for (int i = 0; i < pose_vec.size(); i += 1)
+        {
 
           geometry_msgs::PoseStamped msg_pose;
           msg_pose.pose.position.x = pose_vec[i].translation()[0];
