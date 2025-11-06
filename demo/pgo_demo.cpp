@@ -208,7 +208,7 @@ int main(int argc, char **argv) {
 
         int match_frame = search_result.first;
         // obtain optimal transform
-        std_manager->PlaneGeomrtricIcp(
+        std_manager->PlaneGeometricIcp(
             std_manager->plane_cloud_vec_.back(),
             std_manager->plane_cloud_vec_[match_frame], loop_transform);
 

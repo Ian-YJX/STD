@@ -264,6 +264,7 @@ struct PlaneSolver {
   Eigen::Vector3d target_normal;
 };
 
+//查看实现
 class STDescManager {
 public:
   STDescManager() = default;
@@ -305,7 +306,7 @@ public:
   void AddSTDescs(const std::vector<STDesc> &stds_vec);
 
   // Geometrical optimization by plane-to-plane ico
-  void PlaneGeomrtricIcp(
+  void PlaneGeometricIcp(
       const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &source_cloud,
       const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &target_cloud,
       std::pair<Eigen::Vector3d, Eigen::Matrix3d> &transform);

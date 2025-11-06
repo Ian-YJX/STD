@@ -1384,7 +1384,7 @@ double STDescManager::plane_geometric_verify(
   return useful_match / source_cloud->size();
 }
 
-void STDescManager::PlaneGeomrtricIcp(
+void STDescManager::PlaneGeometricIcp(
     const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &source_cloud,
     const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &target_cloud,
     std::pair<Eigen::Vector3d, Eigen::Matrix3d> &transform) {

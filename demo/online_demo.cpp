@@ -280,7 +280,7 @@ int main(int argc, char **argv)
       origin_pose_vec.push_back(pose);
       PointCloud origin_cloud;
       pcl::transformPointCloud(*current_cloud_body, origin_cloud,
-                               origin_estimate_affine3d);
+                               origin_estimate_affine3d); //这里为什么不直接发布current_cloud_world然后再降采样呢?
       sensor_msgs::PointCloud2 pub_cloud;
       pcl::toROSMsg(origin_cloud, pub_cloud);
       pub_cloud.header.frame_id = "camera_init";
@@ -360,7 +360,7 @@ int main(int argc, char **argv)
           has_loop_flag = true;
           int match_frame = search_result.first;
           // obtain optimal transform
-          std_manager->PlaneGeomrtricIcp(
+          std_manager->PlaneGeometricIcp(
               std_manager->plane_cloud_vec_.back(),
               std_manager->plane_cloud_vec_[match_frame], loop_transform);
 
