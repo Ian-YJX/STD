@@ -22,7 +22,8 @@
 #define MAX_N 10000000000
 #define MAX_FRAME_N 20000
 
-typedef struct ConfigSetting {
+typedef struct ConfigSetting
+{
   /* for point cloud pre-preocess*/
   int stop_skip_enable_ = 0;
   double ds_size_ = 0.5;
@@ -59,7 +60,8 @@ typedef struct ConfigSetting {
 } ConfigSetting;
 
 // Structure for Stabel Triangle Descriptor
-typedef struct STDesc {
+typedef struct STDesc
+{
   // the side lengths of STDesc, arranged from short to long
   Eigen::Vector3d side_length_;
 
@@ -79,7 +81,8 @@ typedef struct STDesc {
 } STDesc;
 
 // plane structure for corner point extraction
-typedef struct Plane {
+typedef struct Plane
+{
   pcl::PointXYZINormal p_center_;
   Eigen::Vector3d center_;
   Eigen::Vector3d normal_;
@@ -93,26 +96,30 @@ typedef struct Plane {
   bool is_plane_ = false;
 } Plane;
 
-typedef struct STDMatchList {
+typedef struct STDMatchList
+{
   std::vector<std::pair<STDesc, STDesc>> match_list_;
   std::pair<int, int> match_id_;
   double mean_dis_;
 } STDMatchList;
 
-class VOXEL_LOC {
+class VOXEL_LOC
+{
 public:
   int64_t x, y, z;
 
   VOXEL_LOC(int64_t vx = 0, int64_t vy = 0, int64_t vz = 0)
       : x(vx), y(vy), z(vz) {}
 
-  bool operator==(const VOXEL_LOC &other) const {
+  bool operator==(const VOXEL_LOC &other) const
+  {
     return (x == other.x && y == other.y && z == other.z);
   }
 };
 
 // for down sample function
-struct M_POINT {
+struct M_POINT
+{
   float xyz[3];
   float intensity;
   int count = 0;
@@ -120,15 +127,19 @@ struct M_POINT {
 
 // Hash value
 
-template <> struct std::hash<VOXEL_LOC> {
-  int64_t operator()(const VOXEL_LOC &s) const {
+template <>
+struct std::hash<VOXEL_LOC>
+{
+  int64_t operator()(const VOXEL_LOC &s) const
+  {
     using std::hash;
     using std::size_t;
     return ((((s.z) * HASH_P) % MAX_N + (s.y)) * HASH_P) % MAX_N + (s.x);
   }
 };
 
-class STDesc_LOC {
+class STDesc_LOC
+{
 public:
   int64_t x, y, z, a, b, c;
 
@@ -136,7 +147,8 @@ public:
              int64_t vb = 0, int64_t vc = 0)
       : x(vx), y(vy), z(vz), a(va), b(vb), c(vc) {}
 
-  bool operator==(const STDesc_LOC &other) const {
+  bool operator==(const STDesc_LOC &other) const
+  {
     // use three attributes
     return (x == other.x && y == other.y && z == other.z);
     // use six attributes
@@ -145,8 +157,11 @@ public:
   }
 };
 
-template <> struct std::hash<STDesc_LOC> {
-  int64_t operator()(const STDesc_LOC &s) const {
+template <>
+struct std::hash<STDesc_LOC>
+{
+  int64_t operator()(const STDesc_LOC &s) const
+  {
     using std::hash;
     using std::size_t;
     return ((((s.z) * HASH_P) % MAX_N + (s.y)) * HASH_P) % MAX_N + (s.x);
@@ -165,7 +180,8 @@ template <> struct std::hash<STDesc_LOC> {
 };
 
 // OctoTree structure for plane detection
-class OctoTree {
+class OctoTree
+{
 public:
   ConfigSetting config_setting_;
   std::vector<Eigen::Vector3d> voxel_points_;
@@ -187,15 +203,18 @@ public:
   float quater_length_;
   bool init_octo_;
   OctoTree(const ConfigSetting &config_setting)
-      : config_setting_(config_setting) {
+      : config_setting_(config_setting)
+  {
     voxel_points_.clear();
     octo_state_ = 0;
     layer_ = 0;
     init_octo_ = false;
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 8; i++)
+    {
       leaves_[i] = nullptr;
     }
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < 6; i++)
+    {
       is_check_connect_[i] = false;
       connect_[i] = false;
       connect_tree_[i] = nullptr;
@@ -228,13 +247,15 @@ void publish_std_pairs(
 
 bool attach_greater_sort(std::pair<double, int> a, std::pair<double, int> b);
 
-struct PlaneSolver {
+struct PlaneSolver
+{
   PlaneSolver(Eigen::Vector3d curr_point_, Eigen::Vector3d curr_normal_,
               Eigen::Vector3d target_point_, Eigen::Vector3d target_normal_)
       : curr_point(curr_point_), curr_normal(curr_normal_),
-        target_point(target_point_), target_normal(target_normal_){};
+        target_point(target_point_), target_normal(target_normal_) {};
   template <typename T>
-  bool operator()(const T *q, const T *t, T *residual) const {
+  bool operator()(const T *q, const T *t, T *residual) const
+  {
     Eigen::Quaternion<T> q_w_curr{q[3], q[0], q[1], q[2]};
     Eigen::Matrix<T, 3, 1> t_w_curr{t[0], t[1], t[2]};
     Eigen::Matrix<T, 3, 1> cp{T(curr_point.x()), T(curr_point.y()),
@@ -252,7 +273,8 @@ struct PlaneSolver {
   static ceres::CostFunction *Create(const Eigen::Vector3d curr_point_,
                                      const Eigen::Vector3d curr_normal_,
                                      Eigen::Vector3d target_point_,
-                                     Eigen::Vector3d target_normal_) {
+                                     Eigen::Vector3d target_normal_)
+  {
     return (
         new ceres::AutoDiffCostFunction<PlaneSolver, 1, 4, 3>(new PlaneSolver(
             curr_point_, curr_normal_, target_point_, target_normal_)));
@@ -264,8 +286,9 @@ struct PlaneSolver {
   Eigen::Vector3d target_normal;
 };
 
-//查看实现
-class STDescManager {
+// 查看实现
+class STDescManager
+{
 public:
   STDescManager() = default;
 
@@ -274,7 +297,8 @@ public:
   unsigned int current_frame_id_;
 
   STDescManager(ConfigSetting &config_setting)
-      : config_setting_(config_setting) {
+      : config_setting_(config_setting)
+  {
     current_frame_id_ = 0;
   };
 

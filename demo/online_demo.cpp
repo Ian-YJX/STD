@@ -437,8 +437,6 @@ int main(int argc, char **argv)
       curr_estimate = isam.calculateEstimate();
       update_poses(curr_estimate, pose_vec);
 
-      auto latest_estimate_affine3d = pose_vec.back();
-
       if (has_loop_flag)
       {
         // publish correct cloud map
@@ -475,13 +473,6 @@ int main(int argc, char **argv)
         correct_path.header.frame_id = "camera_init";
         pubCorrectPath.publish(correct_path);
       }
-      //   PointCloud correct_cloud;
-      //   pcl::transformPointCloud(*current_cloud_body, correct_cloud,
-      //                            latest_estimate_affine3d);
-      //   sensor_msgs::PointCloud2 pub_cloud;
-      //   pcl::toROSMsg(correct_cloud, pub_cloud);
-      //   pub_cloud.header.frame_id = "camera_init";
-      //   pubCorrectCloud.publish(pub_cloud);
 
       visualizeLoopClosure(pubLoopConstraintEdge, loop_container, pose_vec);
 
