@@ -6,6 +6,8 @@
 #include <Eigen/StdVector>
 #include <ceres/ceres.h>
 #include <ceres/rotation.h>
+#include <iomanip>
+#include <iostream>
 #include <fstream>
 #include <mutex>
 #include <pcl/common/io.h>
@@ -21,6 +23,8 @@
 #define HASH_P 116101
 #define MAX_N 10000000000
 #define MAX_FRAME_N 20000
+using namespace std;
+using STDDatabase = std::unordered_map<STDesc_LOC, std::vector<STDesc>>;
 
 typedef struct ConfigSetting
 {
@@ -56,6 +60,13 @@ typedef struct ConfigSetting
   double icp_threshold_ = 0.5;
   double normal_threshold_ = 0.1;
   double dis_threshold_ = 0.3;
+
+  /*for multi-session*/
+  bool keyframe_save_;
+  string pcd_dir_;
+  string std_dir_;
+  string pos_dir_;
+  // int session_id_;
 
 } ConfigSetting;
 
@@ -303,8 +314,8 @@ public:
   };
 
   // hash table, save all descriptors
-  std::unordered_map<STDesc_LOC, std::vector<STDesc>> data_base_;
-
+  STDDatabase data_base_;
+  STDDatabase prior_data_base_; // save descriptors from past session
   // save all key clouds, optional
   std::vector<pcl::PointCloud<pcl::PointXYZI>::Ptr> key_cloud_vec_;
 
@@ -334,6 +345,8 @@ public:
       const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &source_cloud,
       const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &target_cloud,
       std::pair<Eigen::Vector3d, Eigen::Matrix3d> &transform);
+  void saveDatabase(std::string &filename);
+  void loadDatabase(std::string &filename);
 
 private:
   /*Following are sub-processing functions*/

@@ -1,19 +1,24 @@
 #include "include/STDesc.h"
 void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZI> &pl_feat,
-                         double voxel_size) {
+                         double voxel_size)
+{
   int intensity = rand() % 255;
-  if (voxel_size < 0.01) {
+  if (voxel_size < 0.01)
+  {
     return;
   }
   std::unordered_map<VOXEL_LOC, M_POINT> voxel_map;
   uint plsize = pl_feat.size();
 
-  for (uint i = 0; i < plsize; i++) {
+  for (uint i = 0; i < plsize; i++)
+  {
     pcl::PointXYZI &p_c = pl_feat[i];
     float loc_xyz[3];
-    for (int j = 0; j < 3; j++) {
+    for (int j = 0; j < 3; j++)
+    {
       loc_xyz[j] = p_c.data[j] / voxel_size;
-      if (loc_xyz[j] < 0) {
+      if (loc_xyz[j] < 0)
+      {
         loc_xyz[j] -= 1.0;
       }
     }
@@ -21,13 +26,16 @@ void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZI> &pl_feat,
     VOXEL_LOC position((int64_t)loc_xyz[0], (int64_t)loc_xyz[1],
                        (int64_t)loc_xyz[2]);
     auto iter = voxel_map.find(position);
-    if (iter != voxel_map.end()) {
+    if (iter != voxel_map.end())
+    {
       iter->second.xyz[0] += p_c.x;
       iter->second.xyz[1] += p_c.y;
       iter->second.xyz[2] += p_c.z;
       iter->second.intensity += p_c.intensity;
       iter->second.count++;
-    } else {
+    }
+    else
+    {
       M_POINT anp;
       anp.xyz[0] = p_c.x;
       anp.xyz[1] = p_c.y;
@@ -42,7 +50,8 @@ void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZI> &pl_feat,
   pl_feat.resize(plsize);
 
   uint i = 0;
-  for (auto iter = voxel_map.begin(); iter != voxel_map.end(); ++iter) {
+  for (auto iter = voxel_map.begin(); iter != voxel_map.end(); ++iter)
+  {
     pl_feat[i].x = iter->second.xyz[0] / iter->second.count;
     pl_feat[i].y = iter->second.xyz[1] / iter->second.count;
     pl_feat[i].z = iter->second.xyz[2] / iter->second.count;
@@ -51,7 +60,8 @@ void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZI> &pl_feat,
   }
 }
 
-void read_parameters(ros::NodeHandle &nh, ConfigSetting &config_setting) {
+void read_parameters(ros::NodeHandle &nh, ConfigSetting &config_setting)
+{
 
   // pre-preocess
   nh.param<double>("ds_size", config_setting.ds_size_, 0.5);
@@ -92,6 +102,14 @@ void read_parameters(ros::NodeHandle &nh, ConfigSetting &config_setting) {
   nh.param<double>("normal_threshold", config_setting.normal_threshold_, 0.2);
   nh.param<double>("dis_threshold", config_setting.dis_threshold_, 0.5);
 
+  // 新增：key frame相关，用于multi-session
+  nh.param<bool>("keyframe/keyframe_save",
+                 config_setting.keyframe_save_, true);
+  nh.param<string>("keyframe/pcd_dir", config_setting.pcd_dir_, "/root/catkin_ws/src/STD/keyframe/pcd/");
+  nh.param<string>("keyframe/std_dir", config_setting.std_dir_, "/root/catkin_ws/src/STD/keyframe/std/");
+  nh.param<string>("keyframe/pos_dir", config_setting.pos_dir_, "/root/catkin_ws/src/STD/keyframe/pos/");
+  // nh.param<int>("keyframe/session_id", config_setting.session_id_, 0);
+
   std::cout << "Sucessfully load parameters:" << std::endl;
   std::cout << "----------------Main Parameters-------------------"
             << std::endl;
@@ -109,32 +127,39 @@ void read_parameters(ros::NodeHandle &nh, ConfigSetting &config_setting) {
 void load_pose_with_time(
     const std::string &pose_file,
     std::vector<std::pair<Eigen::Vector3d, Eigen::Matrix3d>> &poses_vec,
-    std::vector<double> &times_vec) {
+    std::vector<double> &times_vec)
+{
   times_vec.clear();
   poses_vec.clear();
   std::ifstream fin(pose_file);
   std::string line;
   Eigen::Matrix<double, 1, 7> temp_matrix;
-  while (getline(fin, line)) {
+  while (getline(fin, line))
+  {
     std::istringstream sin(line);
     std::vector<std::string> Waypoints;
     std::string info;
     int number = 0;
-    while (getline(sin, info, ' ')) {
-      if (number == 0) {
+    while (getline(sin, info, ' '))
+    {
+      if (number == 0)
+      {
         double time;
         std::stringstream data;
         data << info;
         data >> time;
         times_vec.push_back(time);
         number++;
-      } else {
+      }
+      else
+      {
         double p;
         std::stringstream data;
         data << info;
         data >> p;
         temp_matrix[number - 1] = p;
-        if (number == 7) {
+        if (number == 7)
+        {
           Eigen::Vector3d translation(temp_matrix[0], temp_matrix[1],
                                       temp_matrix[2]);
           Eigen::Quaterniond q(temp_matrix[6], temp_matrix[3], temp_matrix[4],
@@ -151,31 +176,36 @@ void load_pose_with_time(
 }
 
 double time_inc(std::chrono::_V2::system_clock::time_point &t_end,
-                std::chrono::_V2::system_clock::time_point &t_begin) {
+                std::chrono::_V2::system_clock::time_point &t_begin)
+{
   return std::chrono::duration_cast<std::chrono::duration<double>>(t_end -
                                                                    t_begin)
              .count() *
          1000;
 }
 
-pcl::PointXYZI vec2point(const Eigen::Vector3d &vec) {
+pcl::PointXYZI vec2point(const Eigen::Vector3d &vec)
+{
   pcl::PointXYZI pi;
   pi.x = vec[0];
   pi.y = vec[1];
   pi.z = vec[2];
   return pi;
 }
-Eigen::Vector3d point2vec(const pcl::PointXYZI &pi) {
+Eigen::Vector3d point2vec(const pcl::PointXYZI &pi)
+{
   return Eigen::Vector3d(pi.x, pi.y, pi.z);
 }
 
-bool attach_greater_sort(std::pair<double, int> a, std::pair<double, int> b) {
+bool attach_greater_sort(std::pair<double, int> a, std::pair<double, int> b)
+{
   return (a.first > b.first);
 }
 
 void publish_std_pairs(
     const std::vector<std::pair<STDesc, STDesc>> &match_std_pairs,
-    const ros::Publisher &std_publisher) {
+    const ros::Publisher &std_publisher)
+{
   visualization_msgs::MarkerArray ma_line;
   visualization_msgs::Marker m_line;
   m_line.type = visualization_msgs::Marker::LINE_LIST;
@@ -187,8 +217,10 @@ void publish_std_pairs(
   m_line.header.frame_id = "camera_init";
   m_line.id = 0;
   int max_pub_cnt = 1;
-  for (auto var : match_std_pairs) {
-    if (max_pub_cnt > 100) {
+  for (auto var : match_std_pairs)
+  {
+    if (max_pub_cnt > 100)
+    {
       break;
     }
     max_pub_cnt++;
@@ -295,7 +327,8 @@ void publish_std_pairs(
     m_line.id++;
     m_line.points.clear();
   }
-  for (int j = 0; j < 100 * 6; j++) {
+  for (int j = 0; j < 100 * 6; j++)
+  {
     m_line.color.a = 0.00;
     ma_line.markers.push_back(m_line);
     m_line.id++;
@@ -307,7 +340,8 @@ void publish_std_pairs(
 
 void STDescManager::GenerateSTDescs(
     pcl::PointCloud<pcl::PointXYZI>::Ptr &input_cloud,
-    std::vector<STDesc> &stds_vec) {
+    std::vector<STDesc> &stds_vec)
+{
 
   // step1, voxelization and plane dection
   std::unordered_map<VOXEL_LOC, OctoTree *> voxel_map;
@@ -336,7 +370,8 @@ void STDescManager::GenerateSTDescs(
   // std::cout << "[Description] stds size:" << stds_vec.size() << std::endl;
 
   // step5, clear memory
-  for (auto iter = voxel_map.begin(); iter != voxel_map.end(); iter++) {
+  for (auto iter = voxel_map.begin(); iter != voxel_map.end(); iter++)
+  {
     delete (iter->second);
   }
   return;
@@ -345,9 +380,11 @@ void STDescManager::GenerateSTDescs(
 void STDescManager::SearchLoop(
     const std::vector<STDesc> &stds_vec, std::pair<int, double> &loop_result,
     std::pair<Eigen::Vector3d, Eigen::Matrix3d> &loop_transform,
-    std::vector<std::pair<STDesc, STDesc>> &loop_std_pair) {
+    std::vector<std::pair<STDesc, STDesc>> &loop_std_pair)
+{
 
-  if (stds_vec.size() == 0) {
+  if (stds_vec.size() == 0)
+  {
     ROS_ERROR_STREAM("No STDescs!");
     loop_result = std::pair<int, double>(-1, 0);
     return;
@@ -364,13 +401,15 @@ void STDescManager::SearchLoop(
   unsigned int triggle_candidate = -1;
   std::pair<Eigen::Vector3d, Eigen::Matrix3d> best_transform;
   std::vector<std::pair<STDesc, STDesc>> best_sucess_match_vec;
-  for (size_t i = 0; i < candidate_matcher_vec.size(); i++) {
+  for (size_t i = 0; i < candidate_matcher_vec.size(); i++)
+  {
     double verify_score = -1;
     std::pair<Eigen::Vector3d, Eigen::Matrix3d> relative_pose;
     std::vector<std::pair<STDesc, STDesc>> sucess_match_vec;
     candidate_verify(candidate_matcher_vec[i], verify_score, relative_pose,
                      sucess_match_vec);
-    if (verify_score > best_score) {
+    if (verify_score > best_score)
+    {
       best_score = verify_score;
       best_candidate_id = candidate_matcher_vec[i].match_id_.second;
       best_transform = relative_pose;
@@ -384,21 +423,26 @@ void STDescManager::SearchLoop(
   //           << " ms, candidate verify: " << time_inc(t3, t2) << "ms"
   //           << std::endl;
 
-  if (best_score > config_setting_.icp_threshold_) {
+  if (best_score > config_setting_.icp_threshold_)
+  {
     loop_result = std::pair<int, double>(best_candidate_id, best_score);
     loop_transform = best_transform;
     loop_std_pair = best_sucess_match_vec;
     return;
-  } else {
+  }
+  else
+  {
     loop_result = std::pair<int, double>(-1, 0);
     return;
   }
 }
 
-void STDescManager::AddSTDescs(const std::vector<STDesc> &stds_vec) {
+void STDescManager::AddSTDescs(const std::vector<STDesc> &stds_vec)
+{
   // update frame id
   current_frame_id_++;
-  for (auto single_std : stds_vec) {
+  for (auto single_std : stds_vec)
+  {
     // calculate the position of single std
     STDesc_LOC position;
     position.x = (int)(single_std.side_length_[0] + 0.5);
@@ -408,9 +452,12 @@ void STDescManager::AddSTDescs(const std::vector<STDesc> &stds_vec) {
     position.b = (int)(single_std.angle_[1]);
     position.c = (int)(single_std.angle_[2]);
     auto iter = data_base_.find(position);
-    if (iter != data_base_.end()) {
+    if (iter != data_base_.end())
+    {
       data_base_[position].push_back(single_std);
-    } else {
+    }
+    else
+    {
       std::vector<STDesc> descriptor_vec;
       descriptor_vec.push_back(single_std);
       data_base_[position] = descriptor_vec;
@@ -421,24 +468,31 @@ void STDescManager::AddSTDescs(const std::vector<STDesc> &stds_vec) {
 
 void STDescManager::init_voxel_map(
     const pcl::PointCloud<pcl::PointXYZI>::Ptr &input_cloud,
-    std::unordered_map<VOXEL_LOC, OctoTree *> &voxel_map) {
+    std::unordered_map<VOXEL_LOC, OctoTree *> &voxel_map)
+{
   uint plsize = input_cloud->size();
-  for (uint i = 0; i < plsize; i++) {
+  for (uint i = 0; i < plsize; i++)
+  {
     Eigen::Vector3d p_c(input_cloud->points[i].x, input_cloud->points[i].y,
                         input_cloud->points[i].z);
     double loc_xyz[3];
-    for (int j = 0; j < 3; j++) {
+    for (int j = 0; j < 3; j++)
+    {
       loc_xyz[j] = p_c[j] / config_setting_.voxel_size_;
-      if (loc_xyz[j] < 0) {
+      if (loc_xyz[j] < 0)
+      {
         loc_xyz[j] -= 1.0;
       }
     }
     VOXEL_LOC position((int64_t)loc_xyz[0], (int64_t)loc_xyz[1],
                        (int64_t)loc_xyz[2]);
     auto iter = voxel_map.find(position);
-    if (iter != voxel_map.end()) {
+    if (iter != voxel_map.end())
+    {
       voxel_map[position]->voxel_points_.push_back(p_c);
-    } else {
+    }
+    else
+    {
       OctoTree *octo_tree = new OctoTree(config_setting_);
       voxel_map[position] = octo_tree;
       voxel_map[position]->voxel_points_.push_back(p_c);
@@ -447,7 +501,8 @@ void STDescManager::init_voxel_map(
   std::vector<std::unordered_map<VOXEL_LOC, OctoTree *>::iterator> iter_list;
   std::vector<size_t> index;
   size_t i = 0;
-  for (auto iter = voxel_map.begin(); iter != voxel_map.end(); ++iter) {
+  for (auto iter = voxel_map.begin(); iter != voxel_map.end(); ++iter)
+  {
     index.push_back(i);
     i++;
     iter_list.push_back(iter);
@@ -458,7 +513,8 @@ void STDescManager::init_voxel_map(
   //   std::cout << "omp num:" << MP_PROC_NUM << std::endl;
   // #pragma omp parallel for
   // #endif
-  for (int i = 0; i < index.size(); i++) {
+  for (int i = 0; i < index.size(); i++)
+  {
     iter_list[i]->second->init_octo_tree();
   }
   // std::cout << "voxel num:" << index.size() << std::endl;
@@ -468,41 +524,64 @@ void STDescManager::init_voxel_map(
 }
 
 void STDescManager::build_connection(
-    std::unordered_map<VOXEL_LOC, OctoTree *> &voxel_map) {
-  for (auto iter = voxel_map.begin(); iter != voxel_map.end(); iter++) {
-    if (iter->second->plane_ptr_->is_plane_) {
+    std::unordered_map<VOXEL_LOC, OctoTree *> &voxel_map)
+{
+  for (auto iter = voxel_map.begin(); iter != voxel_map.end(); iter++)
+  {
+    if (iter->second->plane_ptr_->is_plane_)
+    {
       OctoTree *current_octo = iter->second;
-      for (int i = 0; i < 6; i++) {
+      for (int i = 0; i < 6; i++)
+      {
         VOXEL_LOC neighbor = iter->first;
-        if (i == 0) {
+        if (i == 0)
+        {
           neighbor.x = neighbor.x + 1;
-        } else if (i == 1) {
+        }
+        else if (i == 1)
+        {
           neighbor.y = neighbor.y + 1;
-        } else if (i == 2) {
+        }
+        else if (i == 2)
+        {
           neighbor.z = neighbor.z + 1;
-        } else if (i == 3) {
+        }
+        else if (i == 3)
+        {
           neighbor.x = neighbor.x - 1;
-        } else if (i == 4) {
+        }
+        else if (i == 4)
+        {
           neighbor.y = neighbor.y - 1;
-        } else if (i == 5) {
+        }
+        else if (i == 5)
+        {
           neighbor.z = neighbor.z - 1;
         }
         auto near = voxel_map.find(neighbor);
-        if (near == voxel_map.end()) {
+        if (near == voxel_map.end())
+        {
           current_octo->is_check_connect_[i] = true;
           current_octo->connect_[i] = false;
-        } else {
-          if (!current_octo->is_check_connect_[i]) {
+        }
+        else
+        {
+          if (!current_octo->is_check_connect_[i])
+          {
             OctoTree *near_octo = near->second;
             current_octo->is_check_connect_[i] = true;
             int j;
-            if (i >= 3) {
+            if (i >= 3)
+            {
               j = i - 3;
-            } else {
+            }
+            else
+            {
               j = i + 3;
             }
             near_octo->is_check_connect_[j] = true;
-            if (near_octo->plane_ptr_->is_plane_) {
+            if (near_octo->plane_ptr_->is_plane_)
+            {
               // merge near octo
               Eigen::Vector3d normal_diff = current_octo->plane_ptr_->normal_ -
                                             near_octo->plane_ptr_->normal_;
@@ -511,16 +590,21 @@ void STDescManager::build_connection(
               if (normal_diff.norm() <
                       config_setting_.plane_merge_normal_thre_ ||
                   normal_add.norm() <
-                      config_setting_.plane_merge_normal_thre_) {
+                      config_setting_.plane_merge_normal_thre_)
+              {
                 current_octo->connect_[i] = true;
                 near_octo->connect_[j] = true;
                 current_octo->connect_tree_[i] = near_octo;
                 near_octo->connect_tree_[j] = current_octo;
-              } else {
+              }
+              else
+              {
                 current_octo->connect_[i] = false;
                 near_octo->connect_[j] = false;
               }
-            } else {
+            }
+            else
+            {
               current_octo->connect_[i] = false;
               near_octo->connect_[j] = true;
               near_octo->connect_tree_[j] = current_octo;
@@ -534,9 +618,12 @@ void STDescManager::build_connection(
 
 void STDescManager::getPlane(
     const std::unordered_map<VOXEL_LOC, OctoTree *> &voxel_map,
-    pcl::PointCloud<pcl::PointXYZINormal>::Ptr &plane_cloud) {
-  for (auto iter = voxel_map.begin(); iter != voxel_map.end(); iter++) {
-    if (iter->second->plane_ptr_->is_plane_) {
+    pcl::PointCloud<pcl::PointXYZINormal>::Ptr &plane_cloud)
+{
+  for (auto iter = voxel_map.begin(); iter != voxel_map.end(); iter++)
+  {
+    if (iter->second->plane_ptr_->is_plane_)
+    {
       pcl::PointXYZINormal pi;
       pi.x = iter->second->plane_ptr_->center_[0];
       pi.y = iter->second->plane_ptr_->center_[1];
@@ -552,77 +639,98 @@ void STDescManager::getPlane(
 void STDescManager::corner_extractor(
     std::unordered_map<VOXEL_LOC, OctoTree *> &voxel_map,
     const pcl::PointCloud<pcl::PointXYZI>::Ptr &input_cloud,
-    pcl::PointCloud<pcl::PointXYZINormal>::Ptr &corner_points) {
+    pcl::PointCloud<pcl::PointXYZINormal>::Ptr &corner_points)
+{
 
   pcl::PointCloud<pcl::PointXYZINormal>::Ptr prepare_corner_points(
       new pcl::PointCloud<pcl::PointXYZINormal>);
 
   // Avoid inconsistent voxel cutting caused by different view point
   std::vector<Eigen::Vector3i> voxel_round;
-  for (int x = -1; x <= 1; x++) {
-    for (int y = -1; y <= 1; y++) {
-      for (int z = -1; z <= 1; z++) {
+  for (int x = -1; x <= 1; x++)
+  {
+    for (int y = -1; y <= 1; y++)
+    {
+      for (int z = -1; z <= 1; z++)
+      {
         Eigen::Vector3i voxel_inc(x, y, z);
         voxel_round.push_back(voxel_inc);
       }
     }
   }
-  for (auto iter = voxel_map.begin(); iter != voxel_map.end(); iter++) {
-    if (!iter->second->plane_ptr_->is_plane_) {
+  for (auto iter = voxel_map.begin(); iter != voxel_map.end(); iter++)
+  {
+    if (!iter->second->plane_ptr_->is_plane_)
+    {
       VOXEL_LOC current_position = iter->first;
       OctoTree *current_octo = iter->second;
       int connect_index = -1;
-      for (int i = 0; i < 6; i++) {
-        if (current_octo->connect_[i]) {
+      for (int i = 0; i < 6; i++)
+      {
+        if (current_octo->connect_[i])
+        {
           connect_index = i;
           OctoTree *connect_octo = current_octo->connect_tree_[connect_index];
           bool use = false;
-          for (int j = 0; j < 6; j++) {
-            if (connect_octo->is_check_connect_[j]) {
-              if (connect_octo->connect_[j]) {
+          for (int j = 0; j < 6; j++)
+          {
+            if (connect_octo->is_check_connect_[j])
+            {
+              if (connect_octo->connect_[j])
+              {
                 use = true;
               }
             }
           }
           // if no plane near the voxel, skip
-          if (use == false) {
+          if (use == false)
+          {
             continue;
           }
           // only project voxels with points num > 10
-          if (current_octo->voxel_points_.size() > 10) {
+          if (current_octo->voxel_points_.size() > 10)
+          {
             Eigen::Vector3d projection_normal =
                 current_octo->connect_tree_[connect_index]->plane_ptr_->normal_;
             Eigen::Vector3d projection_center =
                 current_octo->connect_tree_[connect_index]->plane_ptr_->center_;
             std::vector<Eigen::Vector3d> proj_points;
             // proj the boundary voxel and nearby voxel onto adjacent plane
-            for (auto voxel_inc : voxel_round) {
+            for (auto voxel_inc : voxel_round)
+            {
               VOXEL_LOC connect_project_position = current_position;
               connect_project_position.x += voxel_inc[0];
               connect_project_position.y += voxel_inc[1];
               connect_project_position.z += voxel_inc[2];
               auto iter_near = voxel_map.find(connect_project_position);
-              if (iter_near != voxel_map.end()) {
+              if (iter_near != voxel_map.end())
+              {
                 bool skip_flag = false;
                 if (!voxel_map[connect_project_position]
-                         ->plane_ptr_->is_plane_) {
-                  if (voxel_map[connect_project_position]->is_project_) {
+                         ->plane_ptr_->is_plane_)
+                {
+                  if (voxel_map[connect_project_position]->is_project_)
+                  {
                     for (auto normal : voxel_map[connect_project_position]
-                                           ->proj_normal_vec_) {
+                                           ->proj_normal_vec_)
+                    {
                       Eigen::Vector3d normal_diff = projection_normal - normal;
                       Eigen::Vector3d normal_add = projection_normal + normal;
                       // check if repeated project
-                      if (normal_diff.norm() < 0.5 || normal_add.norm() < 0.5) {
+                      if (normal_diff.norm() < 0.5 || normal_add.norm() < 0.5)
+                      {
                         skip_flag = true;
                       }
                     }
                   }
-                  if (skip_flag) {
+                  if (skip_flag)
+                  {
                     continue;
                   }
                   for (size_t j = 0; j < voxel_map[connect_project_position]
                                              ->voxel_points_.size();
-                       j++) {
+                       j++)
+                  {
                     proj_points.push_back(
                         voxel_map[connect_project_position]->voxel_points_[j]);
                     voxel_map[connect_project_position]->is_project_ = true;
@@ -637,7 +745,8 @@ void STDescManager::corner_extractor(
                 new pcl::PointCloud<pcl::PointXYZINormal>);
             extract_corner(projection_center, projection_normal, proj_points,
                            sub_corner_points);
-            for (auto pi : sub_corner_points->points) {
+            for (auto pi : sub_corner_points->points)
+            {
               prepare_corner_points->push_back(pi);
             }
           }
@@ -647,16 +756,21 @@ void STDescManager::corner_extractor(
   }
   non_maxi_suppression(prepare_corner_points);
 
-  if (config_setting_.maximum_corner_num_ > prepare_corner_points->size()) {
+  if (config_setting_.maximum_corner_num_ > prepare_corner_points->size())
+  {
     corner_points = prepare_corner_points;
-  } else {
+  }
+  else
+  {
     std::vector<std::pair<double, int>> attach_vec;
-    for (size_t i = 0; i < prepare_corner_points->size(); i++) {
+    for (size_t i = 0; i < prepare_corner_points->size(); i++)
+    {
       attach_vec.push_back(std::pair<double, int>(
           prepare_corner_points->points[i].intensity, i));
     }
     std::sort(attach_vec.begin(), attach_vec.end(), attach_greater_sort);
-    for (size_t i = 0; i < config_setting_.maximum_corner_num_; i++) {
+    for (size_t i = 0; i < config_setting_.maximum_corner_num_; i++)
+    {
       corner_points->points.push_back(
           prepare_corner_points->points[attach_vec[i].second]);
     }
@@ -666,7 +780,8 @@ void STDescManager::corner_extractor(
 void STDescManager::extract_corner(
     const Eigen::Vector3d &proj_center, const Eigen::Vector3d proj_normal,
     const std::vector<Eigen::Vector3d> proj_points,
-    pcl::PointCloud<pcl::PointXYZINormal>::Ptr &corner_points) {
+    pcl::PointCloud<pcl::PointXYZINormal>::Ptr &corner_points)
+{
 
   double resolution = config_setting_.proj_image_resolution_;
   double dis_threshold_min = config_setting_.proj_dis_min_;
@@ -676,11 +791,16 @@ void STDescManager::extract_corner(
   double C = proj_normal[2];
   double D = -(A * proj_center[0] + B * proj_center[1] + C * proj_center[2]);
   Eigen::Vector3d x_axis(1, 1, 0);
-  if (C != 0) {
+  if (C != 0)
+  {
     x_axis[2] = -(A + B) / C;
-  } else if (B != 0) {
+  }
+  else if (B != 0)
+  {
     x_axis[1] = -A / B;
-  } else {
+  }
+  else
+  {
     x_axis[0] = 0;
     x_axis[1] = 1;
   }
@@ -698,12 +818,14 @@ void STDescManager::extract_corner(
   double dy =
       -(ay * proj_center[0] + by * proj_center[1] + cy * proj_center[2]);
   std::vector<Eigen::Vector2d> point_list_2d;
-  for (size_t i = 0; i < proj_points.size(); i++) {
+  for (size_t i = 0; i < proj_points.size(); i++)
+  {
     double x = proj_points[i][0];
     double y = proj_points[i][1];
     double z = proj_points[i][2];
     double dis = fabs(x * A + y * B + z * C + D);
-    if (dis < dis_threshold_min || dis > dis_threshold_max) {
+    if (dis < dis_threshold_min || dis > dis_threshold_max)
+    {
       continue;
     }
     Eigen::Vector3d cur_project;
@@ -729,20 +851,26 @@ void STDescManager::extract_corner(
   double max_x = -10;
   double min_y = 10;
   double max_y = -10;
-  if (point_list_2d.size() <= 5) {
+  if (point_list_2d.size() <= 5)
+  {
     return;
   }
-  for (auto pi : point_list_2d) {
-    if (pi[0] < min_x) {
+  for (auto pi : point_list_2d)
+  {
+    if (pi[0] < min_x)
+    {
       min_x = pi[0];
     }
-    if (pi[0] > max_x) {
+    if (pi[0] > max_x)
+    {
       max_x = pi[0];
     }
-    if (pi[1] < min_y) {
+    if (pi[1] < min_y)
+    {
       min_y = pi[1];
     }
-    if (pi[1] > max_y) {
+    if (pi[1] > max_y)
+    {
       max_y = pi[1];
     }
   }
@@ -758,8 +886,10 @@ void STDescManager::extract_corner(
   double gradient_array[x_axis_len][y_axis_len] = {0};
   double mean_x_array[x_axis_len][y_axis_len] = {0};
   double mean_y_array[x_axis_len][y_axis_len] = {0};
-  for (int x = 0; x < x_axis_len; x++) {
-    for (int y = 0; y < y_axis_len; y++) {
+  for (int x = 0; x < x_axis_len; x++)
+  {
+    for (int y = 0; y < y_axis_len; y++)
+    {
       img_count_array[x][y] = 0;
       mean_x_array[x][y] = 0;
       mean_y_array[x][y] = 0;
@@ -768,7 +898,8 @@ void STDescManager::extract_corner(
       img_container[x][y] = single_container;
     }
   }
-  for (size_t i = 0; i < point_list_2d.size(); i++) {
+  for (size_t i = 0; i < point_list_2d.size(); i++)
+  {
     int x_index = (int)((point_list_2d[i][0] - min_x) / resolution);
     int y_index = (int)((point_list_2d[i][1] - min_y) / resolution);
     mean_x_array[x_index][y_index] += point_list_2d[i][0];
@@ -777,18 +908,25 @@ void STDescManager::extract_corner(
     img_container[x_index][y_index].push_back(point_list_2d[i]);
   }
   // calc gradient
-  for (int x = 0; x < x_axis_len; x++) {
-    for (int y = 0; y < y_axis_len; y++) {
+  for (int x = 0; x < x_axis_len; x++)
+  {
+    for (int y = 0; y < y_axis_len; y++)
+    {
       double gradient = 0;
       int cnt = 0;
       int inc = 1;
-      for (int x_inc = -inc; x_inc <= inc; x_inc++) {
-        for (int y_inc = -inc; y_inc <= inc; y_inc++) {
+      for (int x_inc = -inc; x_inc <= inc; x_inc++)
+      {
+        for (int y_inc = -inc; y_inc <= inc; y_inc++)
+        {
           int xx = x + x_inc;
           int yy = y + y_inc;
-          if (xx >= 0 && xx < x_axis_len && yy >= 0 && yy < y_axis_len) {
-            if (xx != x || yy != y) {
-              if (img_count_array[xx][yy] >= 0) {
+          if (xx >= 0 && xx < x_axis_len && yy >= 0 && yy < y_axis_len)
+          {
+            if (xx != x || yy != y)
+            {
+              if (img_count_array[xx][yy] >= 0)
+              {
                 gradient += img_count_array[x][y] - img_count_array[xx][yy];
                 cnt++;
               }
@@ -796,9 +934,12 @@ void STDescManager::extract_corner(
           }
         }
       }
-      if (cnt != 0) {
+      if (cnt != 0)
+      {
         gradient_array[x][y] = gradient * 1.0 / cnt;
-      } else {
+      }
+      else
+      {
         gradient_array[x][y] = 0;
       }
     }
@@ -808,24 +949,30 @@ void STDescManager::extract_corner(
   std::vector<int> max_gradient_x_index_vec;
   std::vector<int> max_gradient_y_index_vec;
   for (int x_segment_index = 0; x_segment_index < x_segment_num;
-       x_segment_index++) {
+       x_segment_index++)
+  {
     for (int y_segment_index = 0; y_segment_index < y_segment_num;
-         y_segment_index++) {
+         y_segment_index++)
+    {
       double max_gradient = 0;
       int max_gradient_x_index = -10;
       int max_gradient_y_index = -10;
       for (int x_index = x_segment_index * segmen_base_num;
-           x_index < (x_segment_index + 1) * segmen_base_num; x_index++) {
+           x_index < (x_segment_index + 1) * segmen_base_num; x_index++)
+      {
         for (int y_index = y_segment_index * segmen_base_num;
-             y_index < (y_segment_index + 1) * segmen_base_num; y_index++) {
-          if (img_count_array[x_index][y_index] > max_gradient) {
+             y_index < (y_segment_index + 1) * segmen_base_num; y_index++)
+        {
+          if (img_count_array[x_index][y_index] > max_gradient)
+          {
             max_gradient = img_count_array[x_index][y_index];
             max_gradient_x_index = x_index;
             max_gradient_y_index = y_index;
           }
         }
       }
-      if (max_gradient >= config_setting_.corner_thre_) {
+      if (max_gradient >= config_setting_.corner_thre_)
+      {
         max_gradient_vec.push_back(max_gradient);
         max_gradient_x_index_vec.push_back(max_gradient_x_index);
         max_gradient_y_index_vec.push_back(max_gradient_y_index);
@@ -843,22 +990,28 @@ void STDescManager::extract_corner(
   direction_list.push_back(d);
   d << 1, -1;
   direction_list.push_back(d);
-  for (size_t i = 0; i < max_gradient_vec.size(); i++) {
+  for (size_t i = 0; i < max_gradient_vec.size(); i++)
+  {
     bool is_add = true;
-    for (int j = 0; j < 4; j++) {
+    for (int j = 0; j < 4; j++)
+    {
       Eigen::Vector2i p(max_gradient_x_index_vec[i],
                         max_gradient_y_index_vec[i]);
       Eigen::Vector2i p1 = p + direction_list[j];
       Eigen::Vector2i p2 = p - direction_list[j];
       int threshold = img_count_array[p[0]][p[1]] / 2;
       if (img_count_array[p1[0]][p1[1]] >= threshold &&
-          img_count_array[p2[0]][p2[1]] >= threshold) {
+          img_count_array[p2[0]][p2[1]] >= threshold)
+      {
         // is_add = false;
-      } else {
+      }
+      else
+      {
         continue;
       }
     }
-    if (is_add) {
+    if (is_add)
+    {
       double px = mean_x_array[max_gradient_x_index_vec[i]]
                               [max_gradient_y_index_vec[i]] /
                   img_count_array[max_gradient_x_index_vec[i]]
@@ -884,12 +1037,14 @@ void STDescManager::extract_corner(
 }
 
 void STDescManager::non_maxi_suppression(
-    pcl::PointCloud<pcl::PointXYZINormal>::Ptr &corner_points) {
+    pcl::PointCloud<pcl::PointXYZINormal>::Ptr &corner_points)
+{
   std::vector<bool> is_add_vec;
   pcl::PointCloud<pcl::PointXYZINormal>::Ptr prepare_key_cloud(
       new pcl::PointCloud<pcl::PointXYZINormal>);
   pcl::KdTreeFLANN<pcl::PointXYZINormal> kd_tree;
-  for (auto pi : corner_points->points) {
+  for (auto pi : corner_points->points)
+  {
     prepare_key_cloud->push_back(pi);
     is_add_vec.push_back(true);
   }
@@ -897,29 +1052,36 @@ void STDescManager::non_maxi_suppression(
   std::vector<int> pointIdxRadiusSearch;
   std::vector<float> pointRadiusSquaredDistance;
   double radius = config_setting_.non_max_suppression_radius_;
-  for (size_t i = 0; i < prepare_key_cloud->size(); i++) {
+  for (size_t i = 0; i < prepare_key_cloud->size(); i++)
+  {
     pcl::PointXYZINormal searchPoint = prepare_key_cloud->points[i];
     if (kd_tree.radiusSearch(searchPoint, radius, pointIdxRadiusSearch,
-                             pointRadiusSquaredDistance) > 0) {
+                             pointRadiusSquaredDistance) > 0)
+    {
       Eigen::Vector3d pi(searchPoint.x, searchPoint.y, searchPoint.z);
-      for (size_t j = 0; j < pointIdxRadiusSearch.size(); ++j) {
+      for (size_t j = 0; j < pointIdxRadiusSearch.size(); ++j)
+      {
         Eigen::Vector3d pj(
             prepare_key_cloud->points[pointIdxRadiusSearch[j]].x,
             prepare_key_cloud->points[pointIdxRadiusSearch[j]].y,
             prepare_key_cloud->points[pointIdxRadiusSearch[j]].z);
-        if (pointIdxRadiusSearch[j] == i) {
+        if (pointIdxRadiusSearch[j] == i)
+        {
           continue;
         }
         if (prepare_key_cloud->points[i].intensity <=
-            prepare_key_cloud->points[pointIdxRadiusSearch[j]].intensity) {
+            prepare_key_cloud->points[pointIdxRadiusSearch[j]].intensity)
+        {
           is_add_vec[i] = false;
         }
       }
     }
   }
   corner_points->clear();
-  for (size_t i = 0; i < is_add_vec.size(); i++) {
-    if (is_add_vec[i]) {
+  for (size_t i = 0; i < is_add_vec.size(); i++)
+  {
+    if (is_add_vec[i])
+    {
       corner_points->points.push_back(prepare_key_cloud->points[i]);
     }
   }
@@ -928,7 +1090,8 @@ void STDescManager::non_maxi_suppression(
 
 void STDescManager::build_stdesc(
     const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &corner_points,
-    std::vector<STDesc> &stds_vec) {
+    std::vector<STDesc> &stds_vec)
+{
   stds_vec.clear();
   double scale = 1.0 / config_setting_.std_side_resolution_;
   int near_num = config_setting_.descriptor_near_num_;
@@ -941,12 +1104,16 @@ void STDescManager::build_stdesc(
   std::vector<int> pointIdxNKNSearch(near_num);
   std::vector<float> pointNKNSquaredDistance(near_num);
   // Search N nearest corner points to form stds.
-  for (size_t i = 0; i < corner_points->size(); i++) {
+  for (size_t i = 0; i < corner_points->size(); i++)
+  {
     pcl::PointXYZINormal searchPoint = corner_points->points[i];
     if (kd_tree->nearestKSearch(searchPoint, near_num, pointIdxNKNSearch,
-                                pointNKNSquaredDistance) > 0) {
-      for (int m = 1; m < near_num - 1; m++) {
-        for (int n = m + 1; n < near_num; n++) {
+                                pointNKNSquaredDistance) > 0)
+    {
+      for (int m = 1; m < near_num - 1; m++)
+      {
+        for (int n = m + 1; n < near_num; n++)
+        {
           pcl::PointXYZINormal p1 = searchPoint;
           pcl::PointXYZINormal p2 = corner_points->points[pointIdxNKNSearch[m]];
           pcl::PointXYZINormal p3 = corner_points->points[pointIdxNKNSearch[n]];
@@ -970,7 +1137,8 @@ void STDescManager::build_stdesc(
                           pow(p3.z - p2.z, 2));
           if (a > max_dis_threshold || b > max_dis_threshold ||
               c > max_dis_threshold || a < min_dis_threshold ||
-              b < min_dis_threshold || c < min_dis_threshold) {
+              b < min_dis_threshold || c < min_dis_threshold)
+          {
             continue;
           }
           // re-range the vertex by the side length
@@ -981,7 +1149,8 @@ void STDescManager::build_stdesc(
           l1 << 1, 2, 0;
           l2 << 1, 0, 3;
           l3 << 0, 2, 3;
-          if (a > b) {
+          if (a > b)
+          {
             temp = a;
             a = b;
             b = temp;
@@ -989,7 +1158,8 @@ void STDescManager::build_stdesc(
             l1 = l2;
             l2 = l_temp;
           }
-          if (b > c) {
+          if (b > c)
+          {
             temp = b;
             b = c;
             c = temp;
@@ -997,7 +1167,8 @@ void STDescManager::build_stdesc(
             l2 = l3;
             l3 = l_temp;
           }
-          if (a > b) {
+          if (a > b)
+          {
             temp = a;
             a = b;
             b = temp;
@@ -1013,43 +1184,59 @@ void STDescManager::build_stdesc(
           VOXEL_LOC position((int64_t)d_p.x, (int64_t)d_p.y, (int64_t)d_p.z);
           auto iter = feat_map.find(position);
           Eigen::Vector3d normal_1, normal_2, normal_3;
-          if (iter == feat_map.end()) {
+          if (iter == feat_map.end())
+          {
             Eigen::Vector3d vertex_attached;
-            if (l1[0] == l2[0]) {
+            if (l1[0] == l2[0])
+            {
               A << p1.x, p1.y, p1.z;
               normal_1 << p1.normal_x, p1.normal_y, p1.normal_z;
               vertex_attached[0] = p1.intensity;
-            } else if (l1[1] == l2[1]) {
+            }
+            else if (l1[1] == l2[1])
+            {
               A << p2.x, p2.y, p2.z;
               normal_1 << p2.normal_x, p2.normal_y, p2.normal_z;
               vertex_attached[0] = p2.intensity;
-            } else {
+            }
+            else
+            {
               A << p3.x, p3.y, p3.z;
               normal_1 << p3.normal_x, p3.normal_y, p3.normal_z;
               vertex_attached[0] = p3.intensity;
             }
-            if (l1[0] == l3[0]) {
+            if (l1[0] == l3[0])
+            {
               B << p1.x, p1.y, p1.z;
               normal_2 << p1.normal_x, p1.normal_y, p1.normal_z;
               vertex_attached[1] = p1.intensity;
-            } else if (l1[1] == l3[1]) {
+            }
+            else if (l1[1] == l3[1])
+            {
               B << p2.x, p2.y, p2.z;
               normal_2 << p2.normal_x, p2.normal_y, p2.normal_z;
               vertex_attached[1] = p2.intensity;
-            } else {
+            }
+            else
+            {
               B << p3.x, p3.y, p3.z;
               normal_2 << p3.normal_x, p3.normal_y, p3.normal_z;
               vertex_attached[1] = p3.intensity;
             }
-            if (l2[0] == l3[0]) {
+            if (l2[0] == l3[0])
+            {
               C << p1.x, p1.y, p1.z;
               normal_3 << p1.normal_x, p1.normal_y, p1.normal_z;
               vertex_attached[2] = p1.intensity;
-            } else if (l2[1] == l3[1]) {
+            }
+            else if (l2[1] == l3[1])
+            {
               C << p2.x, p2.y, p2.z;
               normal_3 << p2.normal_x, p2.normal_y, p2.normal_z;
               vertex_attached[2] = p2.intensity;
-            } else {
+            }
+            else
+            {
               C << p3.x, p3.y, p3.z;
               normal_3 << p3.normal_x, p3.normal_y, p3.normal_z;
               vertex_attached[2] = p3.intensity;
@@ -1078,14 +1265,193 @@ void STDescManager::build_stdesc(
 
 void STDescManager::candidate_selector(
     const std::vector<STDesc> &stds_vec,
-    std::vector<STDMatchList> &candidate_matcher_vec) {
+    const STDDatabase &db,
+    std::vector<STDMatchList> &candidate_matcher_vec)
+{
   double match_array[MAX_FRAME_N] = {0};
   std::vector<std::pair<STDesc, STDesc>> match_vec;
   std::vector<int> match_index_vec;
   std::vector<Eigen::Vector3i> voxel_round;
-  for (int x = -1; x <= 1; x++) {
-    for (int y = -1; y <= 1; y++) {
-      for (int z = -1; z <= 1; z++) {
+  for (int x = -1; x <= 1; x++)
+  {
+    for (int y = -1; y <= 1; y++)
+    {
+      for (int z = -1; z <= 1; z++)
+      {
+        voxel_round.emplace_back(x, y, z);
+      }
+    }
+  }
+
+  std::vector<bool> useful_match(stds_vec.size());
+  std::vector<std::vector<size_t>> useful_match_index(stds_vec.size());
+  std::vector<std::vector<STDesc_LOC>> useful_match_position(stds_vec.size());
+  std::vector<size_t> index(stds_vec.size());
+  for (size_t i = 0; i < index.size(); ++i)
+  {
+    index[i] = i;
+    useful_match[i] = false;
+  }
+
+  int dis_match_cnt = 0;
+  int final_match_cnt = 0;
+
+#ifdef MP_EN
+  omp_set_num_threads(MP_PROC_NUM);
+#pragma omp parallel for
+#endif
+  for (size_t i = 0; i < stds_vec.size(); i++)
+  {
+    const STDesc &src_std = stds_vec[i];
+    STDesc_LOC position;
+    double dis_threshold =
+        src_std.side_length_.norm() * config_setting_.rough_dis_threshold_;
+
+    for (const auto &voxel_inc : voxel_round)
+    {
+      position.x = static_cast<int>(src_std.side_length_[0] + voxel_inc[0]);
+      position.y = static_cast<int>(src_std.side_length_[1] + voxel_inc[1]);
+      position.z = static_cast<int>(src_std.side_length_[2] + voxel_inc[2]);
+
+      Eigen::Vector3d voxel_center(
+          static_cast<double>(position.x) + 0.5,
+          static_cast<double>(position.y) + 0.5,
+          static_cast<double>(position.z) + 0.5);
+
+      if ((src_std.side_length_ - voxel_center).norm() < 1.5)
+      {
+        auto iter = db.find(position);
+        if (iter != db.end())
+        {
+          const auto &bucket = iter->second;  // 这一格里的所有 STD
+
+          for (size_t j = 0; j < bucket.size(); j++)
+          {
+            const STDesc &cand = bucket[j];
+
+            if ((src_std.frame_id_ - cand.frame_id_) >
+                config_setting_.skip_near_num_)
+            {
+              double dis = (src_std.side_length_ - cand.side_length_).norm();
+              // 用 side length 粗筛
+              if (dis < dis_threshold)
+              {
+                dis_match_cnt++;
+
+                // 用 vertex_attached_ 做进一步粗筛
+                double vertex_attach_diff =
+                    2.0 *
+                    (src_std.vertex_attached_ - cand.vertex_attached_).norm() /
+                    (src_std.vertex_attached_ + cand.vertex_attached_).norm();
+
+                if (vertex_attach_diff <
+                    config_setting_.vertex_diff_threshold_)
+                {
+                  final_match_cnt++;
+                  useful_match[i] = true;
+                  useful_match_position[i].push_back(position);
+                  useful_match_index[i].push_back(j);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  // dis_match_cnt / final_match_cnt 仅用于 debug，你原来也是只打印没用
+
+  // record match index
+  std::vector<Eigen::Vector2i, Eigen::aligned_allocator<Eigen::Vector2i>>
+      index_recorder;
+  for (size_t i = 0; i < useful_match.size(); i++)
+  {
+    if (useful_match[i])
+    {
+      for (size_t j = 0; j < useful_match_index[i].size(); j++)
+      {
+        const STDesc_LOC &pos = useful_match_position[i][j];
+        auto it = db.find(pos);
+        if (it == db.end())
+          continue; // 理论上不会发生，保险起见
+
+        const auto &bucket = it->second;
+        const STDesc &cand = bucket[useful_match_index[i][j]];
+
+        match_array[cand.frame_id_] += 1;
+        index_recorder.emplace_back(i, j);
+        match_index_vec.push_back(cand.frame_id_);
+      }
+    }
+  }
+
+  // select candidate according to the matching score
+  for (int cnt = 0; cnt < config_setting_.candidate_num_; cnt++)
+  {
+    double max_vote = 1;
+    int max_vote_index = -1;
+    for (int i = 0; i < MAX_FRAME_N; i++)
+    {
+      if (match_array[i] > max_vote)
+      {
+        max_vote = match_array[i];
+        max_vote_index = i;
+      }
+    }
+
+    STDMatchList match_triangle_list;
+    if (max_vote_index >= 0 && max_vote >= 5)
+    {
+      match_array[max_vote_index] = 0;
+      match_triangle_list.match_id_.first = current_frame_id_;
+      match_triangle_list.match_id_.second = max_vote_index;
+
+      for (size_t i = 0; i < index_recorder.size(); i++)
+      {
+        if (match_index_vec[i] == max_vote_index)
+        {
+          size_t src_idx = index_recorder[i][0];
+          size_t list_idx = index_recorder[i][1];
+
+          const STDesc_LOC &pos = useful_match_position[src_idx][list_idx];
+          auto it = db.find(pos);
+          if (it == db.end())
+            continue;
+
+          const auto &bucket = it->second;
+          const STDesc &cand = bucket[useful_match_index[src_idx][list_idx]];
+
+          std::pair<STDesc, STDesc> single_match_pair;
+          single_match_pair.first = stds_vec[src_idx];
+          single_match_pair.second = cand;
+
+          match_triangle_list.match_list_.push_back(single_match_pair);
+        }
+      }
+
+      candidate_matcher_vec.push_back(match_triangle_list);
+    }
+    else
+    {
+      break;
+    }
+  }
+}
+
+void STDescManager::candidate_selector(
+    const std::vector<STDesc> &stds_vec,
+    std::vector<STDMatchList> &candidate_matcher_vec)
+{
+  double match_array[MAX_FRAME_N] = {0};
+  std::vector<std::pair<STDesc, STDesc>> match_vec;
+  std::vector<int> match_index_vec;
+  std::vector<Eigen::Vector3i> voxel_round;
+  for (int x = -1; x <= 1; x++)
+  {
+    for (int y = -1; y <= 1; y++)
+    {
+      for (int z = -1; z <= 1; z++)
+      {
         Eigen::Vector3i voxel_inc(x, y, z);
         voxel_round.push_back(voxel_inc);
       }
@@ -1096,7 +1462,8 @@ void STDescManager::candidate_selector(
   std::vector<std::vector<size_t>> useful_match_index(stds_vec.size());
   std::vector<std::vector<STDesc_LOC>> useful_match_position(stds_vec.size());
   std::vector<size_t> index(stds_vec.size());
-  for (size_t i = 0; i < index.size(); ++i) {
+  for (size_t i = 0; i < index.size(); ++i)
+  {
     index[i] = i;
     useful_match[i] = false;
   }
@@ -1107,31 +1474,38 @@ void STDescManager::candidate_selector(
   omp_set_num_threads(MP_PROC_NUM);
 #pragma omp parallel for
 #endif
-  for (size_t i = 0; i < stds_vec.size(); i++) {
+  for (size_t i = 0; i < stds_vec.size(); i++)
+  {
     STDesc src_std = stds_vec[i];
     STDesc_LOC position;
     int best_index = 0;
     STDesc_LOC best_position;
     double dis_threshold =
         src_std.side_length_.norm() * config_setting_.rough_dis_threshold_;
-    for (auto voxel_inc : voxel_round) {
+    for (auto voxel_inc : voxel_round)
+    {
       position.x = (int)(src_std.side_length_[0] + voxel_inc[0]);
       position.y = (int)(src_std.side_length_[1] + voxel_inc[1]);
       position.z = (int)(src_std.side_length_[2] + voxel_inc[2]);
       Eigen::Vector3d voxel_center((double)position.x + 0.5,
                                    (double)position.y + 0.5,
                                    (double)position.z + 0.5);
-      if ((src_std.side_length_ - voxel_center).norm() < 1.5) {
+      if ((src_std.side_length_ - voxel_center).norm() < 1.5)
+      {
         auto iter = data_base_.find(position);
-        if (iter != data_base_.end()) {
-          for (size_t j = 0; j < data_base_[position].size(); j++) {
+        if (iter != data_base_.end())
+        {
+          for (size_t j = 0; j < data_base_[position].size(); j++)
+          {
             if ((src_std.frame_id_ - data_base_[position][j].frame_id_) >
-                config_setting_.skip_near_num_) {
+                config_setting_.skip_near_num_)
+            {
               double dis =
                   (src_std.side_length_ - data_base_[position][j].side_length_)
                       .norm();
               // rough filter with side lengths
-              if (dis < dis_threshold) {
+              if (dis < dis_threshold)
+              {
                 dis_match_cnt++;
                 // rough filter with vertex attached info
                 double vertex_attach_diff =
@@ -1145,7 +1519,8 @@ void STDescManager::candidate_selector(
                 // std::cout << "vertex diff:" << vertex_attach_diff <<
                 // std::endl;
                 if (vertex_attach_diff <
-                    config_setting_.vertex_diff_threshold_) {
+                    config_setting_.vertex_diff_threshold_)
+                {
                   final_match_cnt++;
                   useful_match[i] = true;
                   useful_match_position[i].push_back(position);
@@ -1164,9 +1539,12 @@ void STDescManager::candidate_selector(
   // record match index
   std::vector<Eigen::Vector2i, Eigen::aligned_allocator<Eigen::Vector2i>>
       index_recorder;
-  for (size_t i = 0; i < useful_match.size(); i++) {
-    if (useful_match[i]) {
-      for (size_t j = 0; j < useful_match_index[i].size(); j++) {
+  for (size_t i = 0; i < useful_match.size(); i++)
+  {
+    if (useful_match[i])
+    {
+      for (size_t j = 0; j < useful_match_index[i].size(); j++)
+      {
         match_array[data_base_[useful_match_position[i][j]]
                               [useful_match_index[i][j]]
                                   .frame_id_] += 1;
@@ -1180,22 +1558,28 @@ void STDescManager::candidate_selector(
   }
 
   // select candidate according to the matching score
-  for (int cnt = 0; cnt < config_setting_.candidate_num_; cnt++) {
+  for (int cnt = 0; cnt < config_setting_.candidate_num_; cnt++)
+  {
     double max_vote = 1;
     int max_vote_index = -1;
-    for (int i = 0; i < MAX_FRAME_N; i++) {
-      if (match_array[i] > max_vote) {
+    for (int i = 0; i < MAX_FRAME_N; i++)
+    {
+      if (match_array[i] > max_vote)
+      {
         max_vote = match_array[i];
         max_vote_index = i;
       }
     }
     STDMatchList match_triangle_list;
-    if (max_vote_index >= 0 && max_vote >= 5) {
+    if (max_vote_index >= 0 && max_vote >= 5)
+    {
       match_array[max_vote_index] = 0;
       match_triangle_list.match_id_.first = current_frame_id_;
       match_triangle_list.match_id_.second = max_vote_index;
-      for (size_t i = 0; i < index_recorder.size(); i++) {
-        if (match_index_vec[i] == max_vote_index) {
+      for (size_t i = 0; i < index_recorder.size(); i++)
+      {
+        if (match_index_vec[i] == max_vote_index)
+        {
           std::pair<STDesc, STDesc> single_match_pair;
           single_match_pair.first = stds_vec[index_recorder[i][0]];
           single_match_pair.second =
@@ -1207,7 +1591,9 @@ void STDescManager::candidate_selector(
         }
       }
       candidate_matcher_vec.push_back(match_triangle_list);
-    } else {
+    }
+    else
+    {
       break;
     }
   }
@@ -1217,14 +1603,16 @@ void STDescManager::candidate_selector(
 void STDescManager::candidate_verify(
     const STDMatchList &candidate_matcher, double &verify_score,
     std::pair<Eigen::Vector3d, Eigen::Matrix3d> &relative_pose,
-    std::vector<std::pair<STDesc, STDesc>> &sucess_match_vec) {
+    std::vector<std::pair<STDesc, STDesc>> &sucess_match_vec)
+{
   sucess_match_vec.clear();
   int skip_len = (int)(candidate_matcher.match_list_.size() / 50) + 1;
   int use_size = candidate_matcher.match_list_.size() / skip_len;
   double dis_threshold = 3.0;
   std::vector<size_t> index(use_size);
   std::vector<int> vote_list(use_size);
-  for (size_t i = 0; i < index.size(); i++) {
+  for (size_t i = 0; i < index.size(); i++)
+  {
     index[i] = i;
   }
   std::mutex mylock;
@@ -1233,13 +1621,15 @@ void STDescManager::candidate_verify(
   omp_set_num_threads(MP_PROC_NUM);
 #pragma omp parallel for
 #endif
-  for (size_t i = 0; i < use_size; i++) {
+  for (size_t i = 0; i < use_size; i++)
+  {
     auto single_pair = candidate_matcher.match_list_[i * skip_len];
     int vote = 0;
     Eigen::Matrix3d test_rot;
     Eigen::Vector3d test_t;
     triangle_solver(single_pair, test_t, test_rot);
-    for (size_t j = 0; j < candidate_matcher.match_list_.size(); j++) {
+    for (size_t j = 0; j < candidate_matcher.match_list_.size(); j++)
+    {
       auto verify_pair = candidate_matcher.match_list_[j];
       Eigen::Vector3d A = verify_pair.first.vertex_A_;
       Eigen::Vector3d A_transform = test_rot * A + test_t;
@@ -1251,7 +1641,8 @@ void STDescManager::candidate_verify(
       double dis_B = (B_transform - verify_pair.second.vertex_B_).norm();
       double dis_C = (C_transform - verify_pair.second.vertex_C_).norm();
       if (dis_A < dis_threshold && dis_B < dis_threshold &&
-          dis_C < dis_threshold) {
+          dis_C < dis_threshold)
+      {
         vote++;
       }
     }
@@ -1261,13 +1652,16 @@ void STDescManager::candidate_verify(
   }
   int max_vote_index = 0;
   int max_vote = 0;
-  for (size_t i = 0; i < vote_list.size(); i++) {
-    if (max_vote < vote_list[i]) {
+  for (size_t i = 0; i < vote_list.size(); i++)
+  {
+    if (max_vote < vote_list[i])
+    {
       max_vote_index = i;
       max_vote = vote_list[i];
     }
   }
-  if (max_vote >= 4) {
+  if (max_vote >= 4)
+  {
     auto best_pair = candidate_matcher.match_list_[max_vote_index * skip_len];
     int vote = 0;
     Eigen::Matrix3d best_rot;
@@ -1275,7 +1669,8 @@ void STDescManager::candidate_verify(
     triangle_solver(best_pair, best_t, best_rot);
     relative_pose.first = best_t;
     relative_pose.second = best_rot;
-    for (size_t j = 0; j < candidate_matcher.match_list_.size(); j++) {
+    for (size_t j = 0; j < candidate_matcher.match_list_.size(); j++)
+    {
       auto verify_pair = candidate_matcher.match_list_[j];
       Eigen::Vector3d A = verify_pair.first.vertex_A_;
       Eigen::Vector3d A_transform = best_rot * A + best_t;
@@ -1287,20 +1682,24 @@ void STDescManager::candidate_verify(
       double dis_B = (B_transform - verify_pair.second.vertex_B_).norm();
       double dis_C = (C_transform - verify_pair.second.vertex_C_).norm();
       if (dis_A < dis_threshold && dis_B < dis_threshold &&
-          dis_C < dis_threshold) {
+          dis_C < dis_threshold)
+      {
         sucess_match_vec.push_back(verify_pair);
       }
     }
     verify_score = plane_geometric_verify(
         plane_cloud_vec_.back(),
         plane_cloud_vec_[candidate_matcher.match_id_.second], relative_pose);
-  } else {
+  }
+  else
+  {
     verify_score = -1;
   }
 }
 
 void STDescManager::triangle_solver(std::pair<STDesc, STDesc> &std_pair,
-                                    Eigen::Vector3d &t, Eigen::Matrix3d &rot) {
+                                    Eigen::Vector3d &t, Eigen::Matrix3d &rot)
+{
   Eigen::Matrix3d src = Eigen::Matrix3d::Zero();
   Eigen::Matrix3d ref = Eigen::Matrix3d::Zero();
   src.col(0) = std_pair.first.vertex_A_ - std_pair.first.center_;
@@ -1315,7 +1714,8 @@ void STDescManager::triangle_solver(std::pair<STDesc, STDesc> &std_pair,
   Eigen::Matrix3d V = svd.matrixV();
   Eigen::Matrix3d U = svd.matrixU();
   rot = V * U.transpose();
-  if (rot.determinant() < 0) {
+  if (rot.determinant() < 0)
+  {
     Eigen::Matrix3d K;
     K << 1, 0, 0, 0, 1, 0, 0, 0, -1;
     rot = V * K * U.transpose();
@@ -1326,14 +1726,16 @@ void STDescManager::triangle_solver(std::pair<STDesc, STDesc> &std_pair,
 double STDescManager::plane_geometric_verify(
     const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &source_cloud,
     const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &target_cloud,
-    const std::pair<Eigen::Vector3d, Eigen::Matrix3d> &transform) {
+    const std::pair<Eigen::Vector3d, Eigen::Matrix3d> &transform)
+{
   Eigen::Vector3d t = transform.first;
   Eigen::Matrix3d rot = transform.second;
   pcl::KdTreeFLANN<pcl::PointXYZ>::Ptr kd_tree(
       new pcl::KdTreeFLANN<pcl::PointXYZ>);
   pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloud(
       new pcl::PointCloud<pcl::PointXYZ>);
-  for (size_t i = 0; i < target_cloud->size(); i++) {
+  for (size_t i = 0; i < target_cloud->size(); i++)
+  {
     pcl::PointXYZ pi;
     pi.x = target_cloud->points[i].x;
     pi.y = target_cloud->points[i].y;
@@ -1346,7 +1748,8 @@ double STDescManager::plane_geometric_verify(
   double useful_match = 0;
   double normal_threshold = config_setting_.normal_threshold_;
   double dis_threshold = config_setting_.dis_threshold_;
-  for (size_t i = 0; i < source_cloud->size(); i++) {
+  for (size_t i = 0; i < source_cloud->size(); i++)
+  {
     pcl::PointXYZINormal searchPoint = source_cloud->points[i];
     pcl::PointXYZ use_search_point;
     use_search_point.x = searchPoint.x;
@@ -1362,8 +1765,10 @@ double STDescManager::plane_geometric_verify(
     ni = rot * ni;
     int K = 3;
     if (kd_tree->nearestKSearch(use_search_point, K, pointIdxNKNSearch,
-                                pointNKNSquaredDistance) > 0) {
-      for (size_t j = 0; j < K; j++) {
+                                pointNKNSquaredDistance) > 0)
+    {
+      for (size_t j = 0; j < K; j++)
+      {
         pcl::PointXYZINormal nearstPoint =
             target_cloud->points[pointIdxNKNSearch[j]];
         Eigen::Vector3d tpi(nearstPoint.x, nearstPoint.y, nearstPoint.z);
@@ -1374,7 +1779,8 @@ double STDescManager::plane_geometric_verify(
         double point_to_plane = fabs(tni.transpose() * (pi - tpi));
         if ((normal_inc.norm() < normal_threshold ||
              normal_add.norm() < normal_threshold) &&
-            point_to_plane < dis_threshold) {
+            point_to_plane < dis_threshold)
+        {
           useful_match++;
           break;
         }
@@ -1387,12 +1793,14 @@ double STDescManager::plane_geometric_verify(
 void STDescManager::PlaneGeometricIcp(
     const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &source_cloud,
     const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &target_cloud,
-    std::pair<Eigen::Vector3d, Eigen::Matrix3d> &transform) {
+    std::pair<Eigen::Vector3d, Eigen::Matrix3d> &transform)
+{
   pcl::KdTreeFLANN<pcl::PointXYZ>::Ptr kd_tree(
       new pcl::KdTreeFLANN<pcl::PointXYZ>);
   pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloud(
       new pcl::PointCloud<pcl::PointXYZ>);
-  for (size_t i = 0; i < target_cloud->size(); i++) {
+  for (size_t i = 0; i < target_cloud->size(); i++)
+  {
     pcl::PointXYZ pi;
     pi.x = target_cloud->points[i].x;
     pi.y = target_cloud->points[i].y;
@@ -1415,7 +1823,8 @@ void STDescManager::PlaneGeometricIcp(
   std::vector<int> pointIdxNKNSearch(1);
   std::vector<float> pointNKNSquaredDistance(1);
   int useful_match = 0;
-  for (size_t i = 0; i < source_cloud->size(); i++) {
+  for (size_t i = 0; i < source_cloud->size(); i++)
+  {
     pcl::PointXYZINormal searchPoint = source_cloud->points[i];
     Eigen::Vector3d pi(searchPoint.x, searchPoint.y, searchPoint.z);
     pi = rot * pi + t;
@@ -1427,7 +1836,8 @@ void STDescManager::PlaneGeometricIcp(
                        searchPoint.normal_z);
     ni = rot * ni;
     if (kd_tree->nearestKSearch(use_search_point, 1, pointIdxNKNSearch,
-                                pointNKNSquaredDistance) > 0) {
+                                pointNKNSquaredDistance) > 0)
+    {
       pcl::PointXYZINormal nearstPoint =
           target_cloud->points[pointIdxNKNSearch[0]];
       Eigen::Vector3d tpi(nearstPoint.x, nearstPoint.y, nearstPoint.z);
@@ -1440,7 +1850,8 @@ void STDescManager::PlaneGeometricIcp(
       if ((normal_inc.norm() < config_setting_.normal_threshold_ ||
            normal_add.norm() < config_setting_.normal_threshold_) &&
           point_to_plane < config_setting_.dis_threshold_ &&
-          point_to_point_dis < 3) {
+          point_to_point_dis < 3)
+      {
         useful_match++;
         ceres::CostFunction *cost_function;
         Eigen::Vector3d curr_point(source_cloud->points[i].x,
@@ -1469,13 +1880,100 @@ void STDescManager::PlaneGeometricIcp(
   // std::cout << "useful match for icp:" << useful_match << std::endl;
 }
 
-void OctoTree::init_plane() {
+void STDescManager::saveDatabase(std::string &filename)
+{
+  std::ofstream fout(filename);
+  if (!fout.is_open())
+  {
+    std::cerr << "Cannot open file: " << filename << std::endl;
+    return;
+  }
+  // 1. 写文件头（可选但强烈推荐）
+  fout << "# STD_DATABASE_VERSION 1\n";
+  // fout << "# SESSION_ID " << config_setting_.session_id_ << "\n"; // 你可以在 STDescManager 里加一个成员
+  fout << "# FORMAT: KEY x y z a b c; DESC side(3) angle(3) center(3) A(3) B(3) C(3) attached(3) frame_id\n";
+
+  for (const auto &kv : data_base_)
+  {
+    const auto &key = kv.first;
+    const auto &descs = kv.second;
+
+    fout << "KEY "
+         << key.x << " " << key.y << " " << key.z << " "
+         << key.a << " " << key.b << " " << key.c << "\n";
+
+    for (const auto &d : descs)
+    {
+      fout << "DESC "
+           << d.side_length_.transpose() << " "
+           << d.angle_.transpose() << " "
+           << d.center_.transpose() << " "
+           << d.vertex_A_.transpose() << " "
+           << d.vertex_B_.transpose() << " "
+           << d.vertex_C_.transpose() << " "
+           << d.vertex_attached_.transpose() << " "
+           << d.frame_id_
+           << "\n";
+    }
+  }
+  fout.close();
+  std::cout << "[STD] Database saved to: " << filename << std::endl;
+}
+
+void STDescManager::loadDatabase(std::string &filename)
+{
+  std::ifstream fin(filename);
+  if (!fin.is_open())
+  {
+    std::cerr << "Cannot open file: " << filename << std::endl;
+    return;
+  }
+
+  std::string tag;
+  while (fin >> tag)
+  {
+    if (tag == "KEY")
+    {
+      STDesc_LOC key;
+      fin >> key.x >> key.y >> key.z >> key.a >> key.b >> key.c;
+
+      std::vector<STDesc> vec;
+      std::streampos last_pos;
+
+      while (true)
+      {
+        last_pos = fin.tellg();
+        fin >> tag;
+        if (!fin.good() || tag == "KEY")
+        {
+          fin.seekg(last_pos);
+          break;
+        }
+
+        if (tag == "DESC")
+        {
+          STDesc d;
+          fin >> d.side_length_.x() >> d.side_length_.y() >> d.side_length_.z() >> d.angle_.x() >> d.angle_.y() >> d.angle_.z() >> d.center_.x() >> d.center_.y() >> d.center_.z() >> d.vertex_A_.x() >> d.vertex_A_.y() >> d.vertex_A_.z() >> d.vertex_B_.x() >> d.vertex_B_.y() >> d.vertex_B_.z() >> d.vertex_C_.x() >> d.vertex_C_.y() >> d.vertex_C_.z() >> d.vertex_attached_.x() >> d.vertex_attached_.y() >> d.vertex_attached_.z() >> d.frame_id_;
+          vec.push_back(d);
+        }
+      }
+      prior_data_base_[key] = vec;
+    }
+  }
+
+  fin.close();
+  std::cout << "[STD] Database loaded from: " << filename << std::endl;
+}
+
+void OctoTree::init_plane()
+{
   plane_ptr_->covariance_ = Eigen::Matrix3d::Zero();
   plane_ptr_->center_ = Eigen::Vector3d::Zero();
   plane_ptr_->normal_ = Eigen::Vector3d::Zero();
   plane_ptr_->points_size_ = voxel_points_.size();
   plane_ptr_->radius_ = 0;
-  for (auto pi : voxel_points_) {
+  for (auto pi : voxel_points_)
+  {
     plane_ptr_->covariance_ += pi * pi.transpose();
     plane_ptr_->center_ += pi;
   }
@@ -1492,7 +1990,8 @@ void OctoTree::init_plane() {
   evalsReal.rowwise().sum().minCoeff(&evalsMin);
   evalsReal.rowwise().sum().maxCoeff(&evalsMax);
   int evalsMid = 3 - evalsMin - evalsMax;
-  if (evalsReal(evalsMin) < config_setting_.plane_detection_thre_) {
+  if (evalsReal(evalsMin) < config_setting_.plane_detection_thre_)
+  {
     plane_ptr_->normal_ << evecs.real()(0, evalsMin), evecs.real()(1, evalsMin),
         evecs.real()(2, evalsMin);
     plane_ptr_->min_eigen_value_ = evalsReal(evalsMin);
@@ -1508,13 +2007,17 @@ void OctoTree::init_plane() {
     plane_ptr_->p_center_.normal_x = plane_ptr_->normal_(0);
     plane_ptr_->p_center_.normal_y = plane_ptr_->normal_(1);
     plane_ptr_->p_center_.normal_z = plane_ptr_->normal_(2);
-  } else {
+  }
+  else
+  {
     plane_ptr_->is_plane_ = false;
   }
 }
 
-void OctoTree::init_octo_tree() {
-  if (voxel_points_.size() > config_setting_.voxel_init_num_) {
+void OctoTree::init_octo_tree()
+{
+  if (voxel_points_.size() > config_setting_.voxel_init_num_)
+  {
     init_plane();
   }
 }

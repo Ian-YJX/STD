@@ -188,13 +188,13 @@ int main(int argc, char **argv)
   ros::Publisher pubCurrentCloud =
       nh.advertise<sensor_msgs::PointCloud2>("/cloud_current", 100);
   ros::Publisher pubCurrentCorner =
-      nh.advertise<sensor_msgs::PointCloud2>("/cloud_key_points", 100);
+      nh.advertise<sensor_msgs::PointCloud2>("/cloud_key_points", 100); //key
   ros::Publisher pubMatchedCloud =
       nh.advertise<sensor_msgs::PointCloud2>("/cloud_matched", 100);
   ros::Publisher pubMatchedCorner =
-      nh.advertise<sensor_msgs::PointCloud2>("/cloud_matched_key_points", 100);
+      nh.advertise<sensor_msgs::PointCloud2>("/cloud_matched_key_points", 100);//key
   ros::Publisher pubSTD =
-      nh.advertise<visualization_msgs::MarkerArray>("descriptor_line", 10);
+      nh.advertise<visualization_msgs::MarkerArray>("descriptor_line", 10);//key
 
   ros::Publisher pubOriginCloud =
       nh.advertise<sensor_msgs::PointCloud2>("/cloud_origin", 10000);
@@ -208,7 +208,7 @@ int main(int argc, char **argv)
       nh.advertise<nav_msgs::Odometry>("/odom_origin", 10);
   ros::Publisher pubLoopConstraintEdge =
       nh.advertise<visualization_msgs::MarkerArray>("/loop_closure_constraints",
-                                                    10);
+                                                    10);//key
 
   ros::Subscriber subLaserCloud = nh.subscribe<sensor_msgs::PointCloud2>(
       "/cloud_registered_body", 100, laserCloudHandler);
@@ -251,7 +251,8 @@ int main(int argc, char **argv)
   std::vector<PointCloud::Ptr> cloud_vec;
   std::vector<Eigen::Affine3d> pose_vec;
   std::vector<Eigen::Affine3d> origin_pose_vec;
-  std::vector<Eigen::Affine3d> key_pose_vec;
+  std::vector<Eigen::Affine3d> key_pose_vec; // 回环可视化
+  std::vector<Eigen::Affine3d> keyframe_pose_vec;
   std::vector<std::pair<int, int>> loop_container;
 
   PointCloud::Ptr key_cloud(new PointCloud);
@@ -261,15 +262,29 @@ int main(int argc, char **argv)
 
   Eigen::Affine3d last_pose;
   last_pose.setIdentity();
+
+  // 启动异步 spinner（放在 while 外）
+  ros::AsyncSpinner spinner(2);
+  spinner.start();
+
+  // 使用 WallRate，避免 /use_sim_time + ros::Rate 卡死的问题
+  ros::WallRate rate(100.0);
+
+  bool keyframes_saved = false; // 标记是否已经保存过关键帧
+  ros::WallTime last_data_time = ros::WallTime::now();
+
   while (ros::ok())
   {
-    ros::spinOnce();
-
+    // ros::spinOnce();
     PointCloud::Ptr current_cloud_body(new PointCloud);
     PointCloud::Ptr current_cloud_world(new PointCloud);
     Eigen::Affine3d pose;
-    if (syncPackages(current_cloud_body, pose))
+    bool flag = syncPackages(current_cloud_body, pose);
+    // if (!flag)
+    //   cout << flag << endl;
+    if (flag)
     {
+      last_data_time = ros::WallTime::now();
       auto origin_estimate_affine3d = pose;
       pcl::transformPointCloud(*current_cloud_body, *current_cloud_world, pose);
       down_sampling_voxel(*current_cloud_world, config_setting.ds_size_);
@@ -280,7 +295,7 @@ int main(int argc, char **argv)
       origin_pose_vec.push_back(pose);
       PointCloud origin_cloud;
       pcl::transformPointCloud(*current_cloud_body, origin_cloud,
-                               origin_estimate_affine3d); //这里为什么不直接发布current_cloud_world然后再降采样呢?
+                               origin_estimate_affine3d); // 这里为什么不直接发布current_cloud_world然后再降采样呢?
       sensor_msgs::PointCloud2 pub_cloud;
       pcl::toROSMsg(origin_cloud, pub_cloud);
       pub_cloud.header.frame_id = "camera_init";
@@ -305,6 +320,7 @@ int main(int argc, char **argv)
       {
         graph.add(gtsam::PriorFactor<gtsam::Pose3>(
             0, gtsam::Pose3(pose.matrix()), odometryNoise));
+        // keyframe_pose_vec.push_back(pose);
       }
       else
       {
@@ -350,7 +366,7 @@ int main(int argc, char **argv)
         pubCurrentCorner.publish(pub_cloud);
 
         std_manager->key_cloud_vec_.push_back(key_cloud->makeShared());
-
+        keyframe_pose_vec.push_back(pose);
         if (search_result.first > 0)
         {
           std::cout << "[Loop Detection] triggle loop: " << keyCloudInd << "--"
@@ -478,6 +494,49 @@ int main(int argc, char **argv)
 
       has_loop_flag = false;
       ++cloudInd;
+    }
+    else
+    {
+      // ROS_INFO_THROTTLE(1.0, "not syncing"); // 1 秒打印一次，避免刷屏
+      ros::WallDuration no_data_duration =
+          ros::WallTime::now() - last_data_time;
+
+      if (!keyframes_saved &&
+          !keyframe_pose_vec.empty() &&
+          config_setting.keyframe_save_ &&
+          no_data_duration.toSec() > 5.0)
+      {
+        keyframes_saved = true;
+        ROS_INFO("saving keyframe ...");
+        cout << "std_manager->key_cloud_vec_.size()=" << std_manager->key_cloud_vec_.size() << ","
+             << "keyframe_pose_vec.size()=" << keyframe_pose_vec.size() << endl;
+        assert(std_manager->key_cloud_vec_.size() == keyframe_pose_vec.size());
+        string pose_file_name = config_setting.pos_dir_ + "poses.txt";
+        string std_file_name = config_setting.std_dir_ + "std_database.txt";
+        std_manager->saveDatabase(std_file_name);
+        std::ofstream pose_file(pose_file_name);
+        for (int i = 0; i < keyframe_pose_vec.size(); ++i)
+        {
+          std::ostringstream oss;
+          oss << std::setw(4) << std::setfill('0') << i;
+          string key_frame_idx = oss.str();
+          PointCloud correct_cloud = *std_manager->key_cloud_vec_[i];
+          down_sampling_voxel(correct_cloud, 0.05);
+          pcl::io::savePCDFileBinary(config_setting.pcd_dir_ + key_frame_idx + ".pcd", correct_cloud);
+          Eigen::Quaterniond q(keyframe_pose_vec[i].rotation());
+          q.normalize();
+
+          pose_file << keyframe_pose_vec[i].translation()[0] << ", "
+                    << keyframe_pose_vec[i].translation()[1] << ","
+                    << keyframe_pose_vec[i].translation()[2] << ","
+                    << q.w() << ","
+                    << q.x() << ","
+                    << q.y() << ","
+                    << q.z() << "\n";
+        }
+        pose_file.close();
+        ROS_INFO("saving done!");
+      }
     }
   }
 
