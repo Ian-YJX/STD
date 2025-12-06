@@ -117,7 +117,7 @@ int main(int argc, char **argv) {
       std::vector<std::pair<STDesc, STDesc>> loop_std_pair;
       if (keyCloudInd > config_setting.skip_near_num_) {
         std_manager->SearchLoop(stds_vec, search_result, loop_transform,
-                                loop_std_pair);
+                                loop_std_pair, std_manager->data_base_);
       }
       if (search_result.first > 0) {
         std::cout << "[Loop Detection] triggle loop: " << keyCloudInd << "--"

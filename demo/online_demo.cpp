@@ -188,13 +188,13 @@ int main(int argc, char **argv)
   ros::Publisher pubCurrentCloud =
       nh.advertise<sensor_msgs::PointCloud2>("/cloud_current", 100);
   ros::Publisher pubCurrentCorner =
-      nh.advertise<sensor_msgs::PointCloud2>("/cloud_key_points", 100); //key
+      nh.advertise<sensor_msgs::PointCloud2>("/cloud_key_points", 100); // key
   ros::Publisher pubMatchedCloud =
       nh.advertise<sensor_msgs::PointCloud2>("/cloud_matched", 100);
   ros::Publisher pubMatchedCorner =
-      nh.advertise<sensor_msgs::PointCloud2>("/cloud_matched_key_points", 100);//key
+      nh.advertise<sensor_msgs::PointCloud2>("/cloud_matched_key_points", 100); // key
   ros::Publisher pubSTD =
-      nh.advertise<visualization_msgs::MarkerArray>("descriptor_line", 10);//key
+      nh.advertise<visualization_msgs::MarkerArray>("descriptor_line", 10); // key
 
   ros::Publisher pubOriginCloud =
       nh.advertise<sensor_msgs::PointCloud2>("/cloud_origin", 10000);
@@ -208,7 +208,7 @@ int main(int argc, char **argv)
       nh.advertise<nav_msgs::Odometry>("/odom_origin", 10);
   ros::Publisher pubLoopConstraintEdge =
       nh.advertise<visualization_msgs::MarkerArray>("/loop_closure_constraints",
-                                                    10);//key
+                                                    10); // key
 
   ros::Subscriber subLaserCloud = nh.subscribe<sensor_msgs::PointCloud2>(
       "/cloud_registered_body", 100, laserCloudHandler);
@@ -289,7 +289,7 @@ int main(int argc, char **argv)
       pcl::transformPointCloud(*current_cloud_body, *current_cloud_world, pose);
       down_sampling_voxel(*current_cloud_world, config_setting.ds_size_);
       // down sample body cloud
-      down_sampling_voxel(*current_cloud_body, 0.5);
+      down_sampling_voxel(*current_cloud_body, config_setting.ds_size_);
       cloud_vec.push_back(current_cloud_body);
       pose_vec.push_back(pose);
       origin_pose_vec.push_back(pose);
@@ -350,7 +350,7 @@ int main(int argc, char **argv)
         if (keyCloudInd > config_setting.skip_near_num_)
         {
           std_manager->SearchLoop(stds_vec, search_result, loop_transform,
-                                  loop_std_pair);
+                                  loop_std_pair, std_manager->data_base_);
         }
 
         // step3. Add descriptors to the database
@@ -508,13 +508,14 @@ int main(int argc, char **argv)
       {
         keyframes_saved = true;
         ROS_INFO("saving keyframe ...");
-        cout << "std_manager->key_cloud_vec_.size()=" << std_manager->key_cloud_vec_.size() << ","
-             << "keyframe_pose_vec.size()=" << keyframe_pose_vec.size() << endl;
-        assert(std_manager->key_cloud_vec_.size() == keyframe_pose_vec.size());
+        boost::filesystem::create_directories(config_setting.pos_dir_);
+        boost::filesystem::create_directories(config_setting.std_dir_);
+        boost::filesystem::create_directories(config_setting.pcd_dir_);
         string pose_file_name = config_setting.pos_dir_ + "poses.txt";
         string std_file_name = config_setting.std_dir_ + "std_database.txt";
         std_manager->saveDatabase(std_file_name);
         std::ofstream pose_file(pose_file_name);
+
         for (int i = 0; i < keyframe_pose_vec.size(); ++i)
         {
           std::ostringstream oss;
@@ -539,19 +540,5 @@ int main(int argc, char **argv)
       }
     }
   }
-
-  // You can save full map with refined pose
-  // assert(cloud_vec.size() == pose_vec.size());
-  // PointCloud full_map;
-  // for (int i = 0; i < pose_vec.size(); ++i) {
-  //     PointCloud correct_cloud;
-  //     pcl::transformPointCloud(*cloud_vec[i], correct_cloud, pose_vec[i]);
-  //     full_map += correct_cloud;
-  // }
-  // down_sampling_voxel(full_map, 0.05);
-
-  // std::cout << "saving map..." << std::endl;
-  // pcl::io::savePCDFileBinary("/home/dustier/data/map.pcd", full_map);
-
   return 0;
 }

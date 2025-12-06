@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/filesystem.hpp>
 #include "omp.h"
 #include <Eigen/Core>
 #include <Eigen/Dense>
@@ -24,7 +25,6 @@
 #define MAX_N 10000000000
 #define MAX_FRAME_N 20000
 using namespace std;
-using STDDatabase = std::unordered_map<STDesc_LOC, std::vector<STDesc>>;
 
 typedef struct ConfigSetting
 {
@@ -66,6 +66,9 @@ typedef struct ConfigSetting
   string pcd_dir_;
   string std_dir_;
   string pos_dir_;
+  int multi_session_mode_;
+  string cur_dir_;
+  string ref_dir_;
   // int session_id_;
 
 } ConfigSetting;
@@ -238,7 +241,8 @@ public:
 
 void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZI> &pl_feat,
                          double voxel_size);
-
+void load_pose(const std::string &pose_file,
+               std::vector<std::pair<Eigen::Vector3d, Eigen::Matrix3d>> &poses_vec);
 void load_pose_with_time(
     const std::string &pose_file,
     std::vector<std::pair<Eigen::Vector3d, Eigen::Matrix3d>> &poses_vec,
@@ -300,6 +304,8 @@ struct PlaneSolver
 // 查看实现
 class STDescManager
 {
+  using STDDatabase = std::unordered_map<STDesc_LOC, std::vector<STDesc>>;
+
 public:
   STDescManager() = default;
 
@@ -315,7 +321,7 @@ public:
 
   // hash table, save all descriptors
   STDDatabase data_base_;
-  STDDatabase prior_data_base_; // save descriptors from past session
+  // STDDatabase prior_data_base_; // save descriptors from past session
   // save all key clouds, optional
   std::vector<pcl::PointCloud<pcl::PointXYZI>::Ptr> key_cloud_vec_;
 
@@ -335,7 +341,8 @@ public:
   void SearchLoop(const std::vector<STDesc> &stds_vec,
                   std::pair<int, double> &loop_result,
                   std::pair<Eigen::Vector3d, Eigen::Matrix3d> &loop_transform,
-                  std::vector<std::pair<STDesc, STDesc>> &loop_std_pair);
+                  std::vector<std::pair<STDesc, STDesc>> &loop_std_pair,
+                  STDDatabase &db);
 
   // add descriptors to database
   void AddSTDescs(const std::vector<STDesc> &stds_vec);
@@ -386,6 +393,7 @@ private:
   // Select a specified number of candidate frames according to the number of
   // STDesc rough matches
   void candidate_selector(const std::vector<STDesc> &stds_vec,
+                          const STDDatabase &db,
                           std::vector<STDMatchList> &candidate_matcher_vec);
 
   // Get the best candidate frame by geometry check

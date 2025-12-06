@@ -108,6 +108,10 @@ void read_parameters(ros::NodeHandle &nh, ConfigSetting &config_setting)
   nh.param<string>("keyframe/pcd_dir", config_setting.pcd_dir_, "/root/catkin_ws/src/STD/keyframe/pcd/");
   nh.param<string>("keyframe/std_dir", config_setting.std_dir_, "/root/catkin_ws/src/STD/keyframe/std/");
   nh.param<string>("keyframe/pos_dir", config_setting.pos_dir_, "/root/catkin_ws/src/STD/keyframe/pos/");
+  nh.param<int>("multi_session/mode",
+                config_setting.multi_session_mode_, 1);
+  nh.param<string>("multi_session/cur_dir", config_setting.cur_dir_, "/root/catkin_ws/src/STD/std_sessions/session1/");
+  nh.param<string>("multi_session/ref_dir", config_setting.ref_dir_, "/root/catkin_ws/src/STD/std_sessions/session0/");
   // nh.param<int>("keyframe/session_id", config_setting.session_id_, 0);
 
   std::cout << "Sucessfully load parameters:" << std::endl;
@@ -122,6 +126,42 @@ void read_parameters(ros::NodeHandle &nh, ConfigSetting &config_setting)
             << std::endl;
   std::cout << "maximum corners size: " << config_setting.maximum_corner_num_
             << std::endl;
+}
+void load_pose(const std::string &pose_file,
+               std::vector<std::pair<Eigen::Vector3d, Eigen::Matrix3d>> &poses_vec)
+{
+  std::ifstream fin(pose_file);
+  if (!fin.is_open())
+    return;
+
+  poses_vec.clear();
+  std::string line;
+  while (std::getline(fin, line))
+  {
+    if (line.empty())
+      continue;
+
+    // 技巧：把逗号替换成空格，这样就可以用 stringstream 轻松解析了
+    for (char &c : line)
+    {
+      if (c == ',')
+        c = ' ';
+    }
+
+    std::stringstream ss(line);
+    double x, y, z, qw, qx, qy, qz;
+
+    // 尝试读取 7 个数 (x, y, z, qw, qx, qy, qz)
+    if (ss >> x >> y >> z >> qw >> qx >> qy >> qz)
+    {
+      Eigen::Vector3d t(x, y, z);
+      Eigen::Quaterniond q(qw, qx, qy, qz);
+      std::pair<Eigen::Vector3d, Eigen::Matrix3d> single_pose;
+      single_pose.first = t;
+      single_pose.second = q.toRotationMatrix();
+      poses_vec.push_back(single_pose);
+    }
+  }
 }
 
 void load_pose_with_time(
@@ -380,7 +420,8 @@ void STDescManager::GenerateSTDescs(
 void STDescManager::SearchLoop(
     const std::vector<STDesc> &stds_vec, std::pair<int, double> &loop_result,
     std::pair<Eigen::Vector3d, Eigen::Matrix3d> &loop_transform,
-    std::vector<std::pair<STDesc, STDesc>> &loop_std_pair)
+    std::vector<std::pair<STDesc, STDesc>> &loop_std_pair,
+    STDDatabase &db)
 {
 
   if (stds_vec.size() == 0)
@@ -392,7 +433,7 @@ void STDescManager::SearchLoop(
   // step1, select candidates, default number 50
   auto t1 = std::chrono::high_resolution_clock::now();
   std::vector<STDMatchList> candidate_matcher_vec;
-  candidate_selector(stds_vec, candidate_matcher_vec);
+  candidate_selector(stds_vec, db, candidate_matcher_vec);
 
   auto t2 = std::chrono::high_resolution_clock::now();
   // step2, select best candidates from rough candidates
@@ -418,7 +459,8 @@ void STDescManager::SearchLoop(
     }
   }
   auto t3 = std::chrono::high_resolution_clock::now();
-
+  // ROS_INFO_STREAM("[SearchLoop] best_candidate = " << best_candidate_id
+                                                    // << ", best_score = " << best_score);
   // std::cout << "[Time] candidate selector: " << time_inc(t2, t1)
   //           << " ms, candidate verify: " << time_inc(t3, t2) << "ms"
   //           << std::endl;
@@ -1323,7 +1365,7 @@ void STDescManager::candidate_selector(
         auto iter = db.find(position);
         if (iter != db.end())
         {
-          const auto &bucket = iter->second;  // 这一格里的所有 STD
+          const auto &bucket = iter->second; // 这一格里的所有 STD
 
           for (size_t j = 0; j < bucket.size(); j++)
           {
@@ -1429,167 +1471,6 @@ void STDescManager::candidate_selector(
         }
       }
 
-      candidate_matcher_vec.push_back(match_triangle_list);
-    }
-    else
-    {
-      break;
-    }
-  }
-}
-
-void STDescManager::candidate_selector(
-    const std::vector<STDesc> &stds_vec,
-    std::vector<STDMatchList> &candidate_matcher_vec)
-{
-  double match_array[MAX_FRAME_N] = {0};
-  std::vector<std::pair<STDesc, STDesc>> match_vec;
-  std::vector<int> match_index_vec;
-  std::vector<Eigen::Vector3i> voxel_round;
-  for (int x = -1; x <= 1; x++)
-  {
-    for (int y = -1; y <= 1; y++)
-    {
-      for (int z = -1; z <= 1; z++)
-      {
-        Eigen::Vector3i voxel_inc(x, y, z);
-        voxel_round.push_back(voxel_inc);
-      }
-    }
-  }
-
-  std::vector<bool> useful_match(stds_vec.size());
-  std::vector<std::vector<size_t>> useful_match_index(stds_vec.size());
-  std::vector<std::vector<STDesc_LOC>> useful_match_position(stds_vec.size());
-  std::vector<size_t> index(stds_vec.size());
-  for (size_t i = 0; i < index.size(); ++i)
-  {
-    index[i] = i;
-    useful_match[i] = false;
-  }
-  // speed up matching
-  int dis_match_cnt = 0;
-  int final_match_cnt = 0;
-#ifdef MP_EN
-  omp_set_num_threads(MP_PROC_NUM);
-#pragma omp parallel for
-#endif
-  for (size_t i = 0; i < stds_vec.size(); i++)
-  {
-    STDesc src_std = stds_vec[i];
-    STDesc_LOC position;
-    int best_index = 0;
-    STDesc_LOC best_position;
-    double dis_threshold =
-        src_std.side_length_.norm() * config_setting_.rough_dis_threshold_;
-    for (auto voxel_inc : voxel_round)
-    {
-      position.x = (int)(src_std.side_length_[0] + voxel_inc[0]);
-      position.y = (int)(src_std.side_length_[1] + voxel_inc[1]);
-      position.z = (int)(src_std.side_length_[2] + voxel_inc[2]);
-      Eigen::Vector3d voxel_center((double)position.x + 0.5,
-                                   (double)position.y + 0.5,
-                                   (double)position.z + 0.5);
-      if ((src_std.side_length_ - voxel_center).norm() < 1.5)
-      {
-        auto iter = data_base_.find(position);
-        if (iter != data_base_.end())
-        {
-          for (size_t j = 0; j < data_base_[position].size(); j++)
-          {
-            if ((src_std.frame_id_ - data_base_[position][j].frame_id_) >
-                config_setting_.skip_near_num_)
-            {
-              double dis =
-                  (src_std.side_length_ - data_base_[position][j].side_length_)
-                      .norm();
-              // rough filter with side lengths
-              if (dis < dis_threshold)
-              {
-                dis_match_cnt++;
-                // rough filter with vertex attached info
-                double vertex_attach_diff =
-                    2.0 *
-                    (src_std.vertex_attached_ -
-                     data_base_[position][j].vertex_attached_)
-                        .norm() /
-                    (src_std.vertex_attached_ +
-                     data_base_[position][j].vertex_attached_)
-                        .norm();
-                // std::cout << "vertex diff:" << vertex_attach_diff <<
-                // std::endl;
-                if (vertex_attach_diff <
-                    config_setting_.vertex_diff_threshold_)
-                {
-                  final_match_cnt++;
-                  useful_match[i] = true;
-                  useful_match_position[i].push_back(position);
-                  useful_match_index[i].push_back(j);
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  // std::cout << "dis match num:" << dis_match_cnt
-  //           << ", final match num:" << final_match_cnt << std::endl;
-
-  // record match index
-  std::vector<Eigen::Vector2i, Eigen::aligned_allocator<Eigen::Vector2i>>
-      index_recorder;
-  for (size_t i = 0; i < useful_match.size(); i++)
-  {
-    if (useful_match[i])
-    {
-      for (size_t j = 0; j < useful_match_index[i].size(); j++)
-      {
-        match_array[data_base_[useful_match_position[i][j]]
-                              [useful_match_index[i][j]]
-                                  .frame_id_] += 1;
-        Eigen::Vector2i match_index(i, j);
-        index_recorder.push_back(match_index);
-        match_index_vec.push_back(
-            data_base_[useful_match_position[i][j]][useful_match_index[i][j]]
-                .frame_id_);
-      }
-    }
-  }
-
-  // select candidate according to the matching score
-  for (int cnt = 0; cnt < config_setting_.candidate_num_; cnt++)
-  {
-    double max_vote = 1;
-    int max_vote_index = -1;
-    for (int i = 0; i < MAX_FRAME_N; i++)
-    {
-      if (match_array[i] > max_vote)
-      {
-        max_vote = match_array[i];
-        max_vote_index = i;
-      }
-    }
-    STDMatchList match_triangle_list;
-    if (max_vote_index >= 0 && max_vote >= 5)
-    {
-      match_array[max_vote_index] = 0;
-      match_triangle_list.match_id_.first = current_frame_id_;
-      match_triangle_list.match_id_.second = max_vote_index;
-      for (size_t i = 0; i < index_recorder.size(); i++)
-      {
-        if (match_index_vec[i] == max_vote_index)
-        {
-          std::pair<STDesc, STDesc> single_match_pair;
-          single_match_pair.first = stds_vec[index_recorder[i][0]];
-          single_match_pair.second =
-              data_base_[useful_match_position[index_recorder[i][0]]
-                                              [index_recorder[i][1]]]
-                        [useful_match_index[index_recorder[i][0]]
-                                           [index_recorder[i][1]]];
-          match_triangle_list.match_list_.push_back(single_match_pair);
-        }
-      }
       candidate_matcher_vec.push_back(match_triangle_list);
     }
     else
@@ -1957,7 +1838,7 @@ void STDescManager::loadDatabase(std::string &filename)
           vec.push_back(d);
         }
       }
-      prior_data_base_[key] = vec;
+      data_base_[key] = vec;
     }
   }
 
