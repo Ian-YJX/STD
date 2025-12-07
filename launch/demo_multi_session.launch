@@ -12,6 +12,7 @@
 		type="offline_multi_session"
 		name="offline_multi_session"
 		output="screen"
+    launch-prefix="gdb -ex run --args"
 	/>
 
 </launch>

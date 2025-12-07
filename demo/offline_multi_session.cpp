@@ -844,6 +844,115 @@ void buildInterSessionLoopMarkers(
     marker_array.markers.push_back(marker_edge);
 }
 
+// 在 offline_multi_session.cpp 末尾添加
+void optimizeMultiSessionPoses(
+    const std::vector<Eigen::Affine3d> &poses_ref, // 会话0的位姿（已单会话优化）
+    const std::vector<Eigen::Affine3d> &poses_cur, // 会话1的位姿（已单会话优化）
+    const std::vector<InterSessionLoop> &inter_loops,
+    const Eigen::Affine3d &T_W1_to_W0_initial, // 初始会话间变换
+    std::vector<Eigen::Affine3d> &optimized_poses_ref,
+    std::vector<Eigen::Affine3d> &optimized_poses_cur)
+{
+    // 1. 定义噪声模型 - 关键：利用已优化的单会话结果
+    // 由于位姿已通过单会话优化，里程计噪声较小
+    auto odom_noise = gtsam::noiseModel::Diagonal::Sigmas(
+        (gtsam::Vector(6) << 0.01, 0.01, 0.00000005, 0.0000005, 0.00000005, 0.05).finished());
+
+    // 回环噪声：基于匹配得分动态调整，得分越高约束越强
+    auto loop_noise_model = [](double score) -> gtsam::SharedNoiseModel
+    {
+        double weight = 1.0 / (0.1 + 0.9 * (1.0 - score));
+        return gtsam::noiseModel::Diagonal::Sigmas(
+            (gtsam::Vector(6) << 0.1 * weight, 0.1 * weight, 0.1 * weight,
+             0.05 * weight, 0.05 * weight, 0.05 * weight)
+                .finished());
+    };
+
+    // 2. 创建因子图和初始值
+    gtsam::NonlinearFactorGraph graph;
+    gtsam::Values initial;
+
+    // 3. 添加会话0的位姿节点（直接使用已优化位姿）
+    for (size_t i = 0; i < poses_ref.size(); i++)
+    {
+        // gtsam::Pose3 pose(gtsam::Pose3::MatrixType(poses_ref[i].matrix()));
+        gtsam::Pose3 pose(poses_ref[i].matrix());
+        initial.insert(i, pose);
+
+        // 添加相邻关键帧之间的里程计约束
+        if (i > 0)
+        {
+            gtsam::Pose3 prev_pose(poses_ref[i - 1].matrix());
+            gtsam::Pose3 curr_pose(poses_ref[i].matrix());
+            gtsam::Pose3 odom = prev_pose.between(curr_pose);
+            graph.add(gtsam::BetweenFactor<gtsam::Pose3>(i - 1, i, odom, odom_noise));
+        }
+    }
+
+    // 4. 添加会话1的位姿节点（转换到会话0坐标系下）
+    const size_t offset = poses_ref.size();
+    for (size_t j = 0; j < poses_cur.size(); j++)
+    {
+        // 将会话1的位姿转换到会话0坐标系下作为初始值
+        Eigen::Matrix4d global_mat = (T_W1_to_W0_initial * poses_cur[j]).matrix();
+        gtsam::Pose3 global_pose(global_mat);
+        initial.insert(offset + j, global_pose);
+
+        // 添加相邻关键帧之间的里程计约束
+        if (j > 0)
+        {
+            gtsam::Pose3 prev_pose(poses_cur[j - 1].matrix());
+            gtsam::Pose3 curr_pose(poses_cur[j].matrix());
+            gtsam::Pose3 odom = prev_pose.between(curr_pose);
+            graph.add(gtsam::BetweenFactor<gtsam::Pose3>(offset + j - 1, offset + j, odom, odom_noise));
+        }
+    }
+
+    // 5. 添加跨会话回环约束（关键！）
+    for (const auto &loop : inter_loops)
+    {
+        // 将回环相对位姿转换为gtsam::Pose3
+        gtsam::Rot3 R(loop.relative_pose.second);
+        gtsam::Point3 t(loop.relative_pose.first);
+        gtsam::Pose3 loop_pose(R, t);
+
+        graph.add(gtsam::BetweenFactor<gtsam::Pose3>(
+            loop.ref_kf,          // 会话0关键帧索引
+            offset + loop.cur_kf, // 会话1关键帧索引
+            loop_pose,
+            loop_noise_model(loop.score)));
+    }
+
+    // 在添加所有约束后，添加先验约束 - 关键修复
+    gtsam::noiseModel::Diagonal::shared_ptr priorNoise =
+        gtsam::noiseModel::Diagonal::Sigmas(
+            (gtsam::Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
+    // 固定会话0的第一个位姿作为全局参考系
+    graph.add(gtsam::PriorFactor<gtsam::Pose3>(0, gtsam::Pose3(), priorNoise));
+
+    // 6. 执行增量优化
+    gtsam::ISAM2Params parameters;
+    parameters.relinearizeThreshold = 0.01;
+    parameters.relinearizeSkip = 1;
+    gtsam::ISAM2 isam(parameters);
+
+    isam.update(graph, initial);
+    gtsam::Values result = isam.calculateEstimate();
+
+    // 7. 提取优化结果
+    optimized_poses_ref = poses_ref; // 初始化为原值（安全）
+    optimized_poses_cur = poses_cur;
+
+    for (size_t i = 0; i < poses_ref.size(); i++)
+    {
+        optimized_poses_ref[i] = Eigen::Affine3d(result.at<gtsam::Pose3>(i).matrix());
+    }
+    for (size_t j = 0; j < poses_cur.size(); j++)
+    {
+        optimized_poses_cur[j] = Eigen::Affine3d(result.at<gtsam::Pose3>(offset + j).matrix());
+    }
+}
+
 // ----------------------------------
 // （工具函数：目前不在 main 里用，但保留无妨）
 // ----------------------------------
@@ -897,16 +1006,6 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    // 做一次 self-loop 检查（session0 vs session0），看 pipeline 是否 OK
-    // std::vector<InterSessionLoop> self_loops;
-    // detectInterSessionLoops(
-    //     keyframe_clouds_0, // 把 session0 当成“当前会话”
-    //     std_manager_ref,   // 也是“参考库”
-    //     config_setting,
-    //     self_loops);
-    // ROS_INFO_STREAM("[Self-loop check] session0 vs session0, loops = "
-    //                 << self_loops.size());
-
     // 加载 session1（这里只需要 pose + cloud，不需要 STD DB）
     if (!loadSessionAndBuildSTD(keyframe_poses_1, keyframe_clouds_1,
                                 config_setting, 1, nullptr))
@@ -930,33 +1029,57 @@ int main(int argc, char **argv)
     }
 
     // ---- 3. 利用回环估计 T_W1_to_W0 （*关键使用 loop.relative_pose*）----
-    // Eigen::Affine3d T_W1_to_W0 =
-    //     estimateSessionTransformFromLoops(keyframe_poses_0,
-    //                                       keyframe_poses_1,
-    //                                       inter_loops);
     Eigen::Affine3d T_W1_to_W0 =
         estimateSessionTransformFromLoops_STD(inter_loops, true);
 
     Eigen::Matrix4d T_mat = T_W1_to_W0.matrix();
-    std::cout << "Estimated T_W1_to_W0 (4x4):\n"
+    std::cout << "Estimated T_W1_to_W0 (4x4) using STD & ICP is:\n"
               << T_mat << std::endl;
+    // ---- 4. 多会话全局优化 ----
+    // std::vector<Eigen::Affine3d> optimized_poses_ref, optimized_poses_cur;
+    // optimizeMultiSessionPoses(
+    //     keyframe_poses_0, // 已经是单会话优化的结果
+    //     keyframe_poses_1, // 已经是单会话优化的结果
+    //     inter_loops,
+    //     T_W1_to_W0_initial, // 初始估计的变换
+    //     optimized_poses_ref,
+    //     optimized_poses_cur);
 
-    // ---- 4. 构建合并点云和轨迹 + loop 的 Marker ----
-    PointCloud::Ptr merged_map;
-    nav_msgs::Path path_ref, path_cur;
-    std::string frame_id = "camera_init";
+    // // 更新用于增量发布的位姿
+    // keyframe_poses_0 = optimized_poses_ref;
+    // keyframe_poses_1 = optimized_poses_cur;
 
-    buildMergedMapAndPaths(
-        keyframe_poses_0, keyframe_clouds_0,
-        keyframe_poses_1, keyframe_clouds_1,
-        T_W1_to_W0,
-        merged_map,
-        path_ref,
-        path_cur,
-        frame_id);
-    pcl::io::savePCDFileASCII ("/root/catkin_ws/merged_map.pcd", *merged_map);
+    // 计算最终的会话间变换（用于点云转换）
+    // Eigen::Affine3d T_W1_to_W0;
+    // if (!optimized_poses_ref.empty() && !optimized_poses_cur.empty())
+    // {
+    //     // 使用第一个关键帧计算相对变换
+    //     T_W1_to_W0 = optimized_poses_ref[0].inverse() * optimized_poses_cur[0];
+    // }
+    // else
+    // {
+    //     T_W1_to_W0 = T_W1_to_W0_initial; // 回退到初始估计
+    // }
 
+    // T_mat = T_W1_to_W0.matrix();
+    // std::cout << "Optimized T_W1_to_W0 (4x4) using GTSAM is:\n"
+    //           << T_mat << std::endl;
+
+    // // 在优化后添加
+    // double max_residual = 0.0;
+    // for (const auto &loop : inter_loops)
+    // {
+    //     double residual = /* 计算回环残差 */;
+    //     max_residual = std::max(max_residual, residual);
+    // }
+    // if (max_residual > config_setting_.max_residual_threshold_)
+    // {
+    //     ROS_WARN("High residual after optimization, consider re-checking loops");
+    // }
+
+    // ---- 4. 构建回环标记 ----
     visualization_msgs::MarkerArray loop_markers;
+    std::string frame_id = "camera_init";
     buildInterSessionLoopMarkers(
         keyframe_poses_0,
         keyframe_poses_1,
@@ -965,36 +1088,117 @@ int main(int argc, char **argv)
         loop_markers,
         frame_id);
 
-    // ---- 5. 转成 ROS 消息并循环发布 ----
-    sensor_msgs::PointCloud2 merged_msg;
-    pcl::toROSMsg(*merged_map, merged_msg);
-    merged_msg.header.frame_id = frame_id;
+    // ---- 5. 增量发布点云和轨迹 ----
+    size_t current_ref_index = 0;
+    size_t current_cur_index = 0;
+    ros::Rate publish_rate(10); // 10Hz发布频率
+    PointCloud::Ptr merged_map(new PointCloud);
+    nav_msgs::Path path_ref, path_cur;
+    path_ref.header.frame_id = frame_id;
+    path_cur.header.frame_id = frame_id;
 
-    ros::Rate rate(1.0); // 1Hz 刷新
     while (ros::ok())
     {
         ros::Time now = ros::Time::now();
 
-        merged_msg.header.stamp = now;
-        path_ref.header.frame_id = frame_id;
-        path_cur.header.frame_id = frame_id;
+        // 增量发布 session0 数据
+        if (current_ref_index < keyframe_poses_0.size())
+        {
+            // 发布点云
+            PointCloud transformed_cloud;
+            pcl::transformPointCloud(*keyframe_clouds_0[current_ref_index],
+                                     transformed_cloud,
+                                     Eigen::Affine3d::Identity());
+            *merged_map += transformed_cloud;
+
+            // 发布轨迹
+            geometry_msgs::PoseStamped ps;
+            ps.header.frame_id = frame_id;
+            ps.header.stamp = now;
+            ps.pose.position.x = keyframe_poses_0[current_ref_index].translation().x();
+            ps.pose.position.y = keyframe_poses_0[current_ref_index].translation().y();
+            ps.pose.position.z = keyframe_poses_0[current_ref_index].translation().z();
+            Eigen::Quaterniond q_ref(keyframe_poses_0[current_ref_index].rotation());
+            ps.pose.orientation.w = q_ref.w();
+            ps.pose.orientation.x = q_ref.x();
+            ps.pose.orientation.y = q_ref.y();
+            ps.pose.orientation.z = q_ref.z();
+            path_ref.poses.push_back(ps);
+
+            sensor_msgs::PointCloud2 merged_msg;
+            pcl::toROSMsg(transformed_cloud, merged_msg);
+            merged_msg.header.frame_id = frame_id;
+            merged_msg.header.stamp = now;
+            pubMergedCloud.publish(merged_msg);
+
+            current_ref_index++;
+        }
+
+        // 增量发布 session1 数据
+        if (current_cur_index < keyframe_poses_1.size())
+        {
+            // 发布点云
+            PointCloud transformed_cloud;
+            pcl::transformPointCloud(*keyframe_clouds_1[current_cur_index],
+                                     transformed_cloud,
+                                     T_W1_to_W0);
+            *merged_map += transformed_cloud;
+
+            // 发布轨迹
+            Eigen::Affine3d T_global = T_W1_to_W0 * keyframe_poses_1[current_cur_index];
+            geometry_msgs::PoseStamped ps;
+            ps.header.frame_id = frame_id;
+            ps.header.stamp = now;
+            ps.pose.position.x = T_global.translation().x();
+            ps.pose.position.y = T_global.translation().y();
+            ps.pose.position.z = T_global.translation().z();
+            Eigen::Quaterniond q_global(T_global.rotation());
+            ps.pose.orientation.w = q_global.w();
+            ps.pose.orientation.x = q_global.x();
+            ps.pose.orientation.y = q_global.y();
+            ps.pose.orientation.z = q_global.z();
+            path_cur.poses.push_back(ps);
+
+            sensor_msgs::PointCloud2 merged_msg;
+            pcl::toROSMsg(transformed_cloud, merged_msg);
+            merged_msg.header.frame_id = frame_id;
+            merged_msg.header.stamp = now;
+            pubMergedCloud.publish(merged_msg);
+
+            current_cur_index++;
+        }
+
+        // 发布数据
+        // sensor_msgs::PointCloud2 merged_msg;
+        // pcl::toROSMsg(*merged_map, merged_msg);
+        // merged_msg.header.frame_id = frame_id;
+        // merged_msg.header.stamp = now;
+
         path_ref.header.stamp = now;
         path_cur.header.stamp = now;
 
-        for (auto &m : loop_markers.markers)
-        {
-            m.header.stamp = now;
-            m.header.frame_id = frame_id;
-        }
-
-        pubMergedCloud.publish(merged_msg);
+        // pubMergedCloud.publish(merged_msg);
         pubPathRef.publish(path_ref);
         pubPathCur.publish(path_cur);
-        pubInterLoops.publish(loop_markers);
+
+        // 每10帧发布一次回环标记
+        if ((current_ref_index + current_cur_index) > 0 &&
+            (current_ref_index + current_cur_index) % 10 == 0)
+        {
+            for (auto &m : loop_markers.markers)
+            {
+                m.header.stamp = now;
+                m.header.frame_id = frame_id;
+            }
+            pubInterLoops.publish(loop_markers);
+        }
 
         ros::spinOnce();
-        rate.sleep();
+        publish_rate.sleep();
     }
+
+    // 保存最终地图
+    pcl::io::savePCDFileASCII("/root/catkin_ws/merged_map.pcd", *merged_map);
 
     return 0;
 }
