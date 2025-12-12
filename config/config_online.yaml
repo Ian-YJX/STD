@@ -29,7 +29,7 @@ vertex_diff_threshold: 0.5
 rough_dis_threshold: 0.01
 normal_threshold: 0.2
 dis_threshold: 0.5
-icp_threshold: 0.3
+icp_threshold: 0.5
 
 keyframe:
   keyframe_save: true
@@ -37,9 +37,13 @@ keyframe:
   std_dir: "/root/catkin_ws/src/STD/keyframe/std/"
   pos_dir: "/root/catkin_ws/src/STD/keyframe/"
   # session_id: 1
-  
+
+multisession_mode: 2  
+save_directory: "/root/catkin_ws/src/STD/std_sessions/session0/"
+inter_session_icp_threshold: 0.3
+
 multi_session:
-  mode: 1 #0: disable, 1: offline, 2: online
+  # mode: 1 #0: disable, 1: offline, 2: online
   cur_dir: "/root/catkin_ws/src/STD/std_sessions/session1/"
   ref_dir: "/root/catkin_ws/src/STD/std_sessions/session0/"
 # 添加以下参数

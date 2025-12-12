@@ -92,7 +92,16 @@ target_link_libraries(online_demo
         gtsam)
 # Offline Multi-Session Demo
 add_executable(offline_multi_session demo/offline_multi_session.cpp src/STDesc.cpp)
-target_link_libraries(offline_multi_session 
+target_link_libraries(offline_multi_session
+        ${catkin_LIBRARIES}
+        ${PCL_LIBRARIES}
+        ${OpenCV_LIBS}
+        ${CERES_LIBRARIES}
+        gtsam)
+
+# Online Multi-Session Demo
+add_executable(online_multi_session_demo demo/online_multi_session_demo.cpp src/STDesc.cpp)
+target_link_libraries(online_multi_session_demo
         ${catkin_LIBRARIES}
         ${PCL_LIBRARIES}
         ${OpenCV_LIBS}

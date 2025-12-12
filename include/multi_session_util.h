@@ -1,14 +1,22 @@
+#ifndef MULTI_SESSION_UTIL_H
+#define MULTI_SESSION_UTIL_H
+
+#include <Eigen/Geometry>
 #include <vector>
-#include <iostream>
 #include "STDesc.h"
 
+// Fwd declaration
+class STDescManager;
+struct ConfigSetting;
+
+// Loop info
 struct InterSessionLoop
 {
-  int ref_kf;   // reference session 的关键帧 index (session 0)
-  int cur_kf;   // current  session 的关键帧 index (session 1)
-
-  double score; // SearchLoop 输出的匹配得分
-
-  std::pair<Eigen::Vector3d, Eigen::Matrix3d> relative_pose; // triangle solver 得到的相对位姿
-  std::vector<std::pair<STDesc, STDesc>> match_pairs;        // 匹配上的描述子对（用于可视化/调试）
+    int ref_kf;
+    int cur_kf;
+    double score;
+    std::pair<Eigen::Vector3d, Eigen::Matrix3d> relative_pose; // T_cur_to_ref
+    std::vector<std::pair<STDesc, STDesc>> match_pairs;
 };
+
+#endif // MULTI_SESSION_UTIL_H

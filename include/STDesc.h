@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <boost/filesystem.hpp>
@@ -69,6 +70,7 @@ typedef struct ConfigSetting
   int multi_session_mode_;
   string cur_dir_;
   string ref_dir_;
+  double inter_session_icp_threshold_ = 0.3;
   // int session_id_;
 
 } ConfigSetting;
@@ -343,7 +345,12 @@ public:
                   std::pair<Eigen::Vector3d, Eigen::Matrix3d> &loop_transform,
                   std::vector<std::pair<STDesc, STDesc>> &loop_std_pair,
                   STDDatabase &db);
-
+  void SearchLoop(
+      const std::vector<STDesc> &stds_vec, std::pair<int, double> &loop_result,
+      std::pair<Eigen::Vector3d, Eigen::Matrix3d> &loop_transform,
+      std::vector<std::pair<STDesc, STDesc>> &loop_std_pair,
+      STDDatabase &db,
+      int mode);
   // add descriptors to database
   void AddSTDescs(const std::vector<STDesc> &stds_vec);
 

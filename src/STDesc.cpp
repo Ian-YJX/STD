@@ -101,6 +101,7 @@ void read_parameters(ros::NodeHandle &nh, ConfigSetting &config_setting)
   nh.param<double>("icp_threshold", config_setting.icp_threshold_, 0.5);
   nh.param<double>("normal_threshold", config_setting.normal_threshold_, 0.2);
   nh.param<double>("dis_threshold", config_setting.dis_threshold_, 0.5);
+  nh.param<double>("inter_session_icp_threshold", config_setting.inter_session_icp_threshold_, 0.3);
 
   // 新增：key frame相关，用于multi-session
   nh.param<bool>("keyframe/keyframe_save",
@@ -416,12 +417,21 @@ void STDescManager::GenerateSTDescs(
   }
   return;
 }
-
 void STDescManager::SearchLoop(
     const std::vector<STDesc> &stds_vec, std::pair<int, double> &loop_result,
     std::pair<Eigen::Vector3d, Eigen::Matrix3d> &loop_transform,
     std::vector<std::pair<STDesc, STDesc>> &loop_std_pair,
     STDDatabase &db)
+{
+    SearchLoop(stds_vec, loop_result, loop_transform, loop_std_pair, db, 0);
+}
+
+void STDescManager::SearchLoop(
+    const std::vector<STDesc> &stds_vec, std::pair<int, double> &loop_result,
+    std::pair<Eigen::Vector3d, Eigen::Matrix3d> &loop_transform,
+    std::vector<std::pair<STDesc, STDesc>> &loop_std_pair,
+    STDDatabase &db,
+    int mode)
 {
 
   if (stds_vec.size() == 0)
@@ -460,12 +470,20 @@ void STDescManager::SearchLoop(
   }
   auto t3 = std::chrono::high_resolution_clock::now();
   // ROS_INFO_STREAM("[SearchLoop] best_candidate = " << best_candidate_id
-                                                    // << ", best_score = " << best_score);
+  // << ", best_score = " << best_score);
   // std::cout << "[Time] candidate selector: " << time_inc(t2, t1)
   //           << " ms, candidate verify: " << time_inc(t3, t2) << "ms"
   //           << std::endl;
-
-  if (best_score > config_setting_.icp_threshold_)
+  double threshold;
+  if (mode == 0)
+  {
+    threshold = config_setting_.icp_threshold_;
+  }
+  else
+  {
+    threshold = config_setting_.inter_session_icp_threshold_;
+  }
+  if (best_score > threshold)
   {
     loop_result = std::pair<int, double>(best_candidate_id, best_score);
     loop_transform = best_transform;
