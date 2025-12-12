@@ -18,11 +18,18 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <thread>
 
-#include "include/STDesc.h"
+#include "../include/STDesc.h"
+#include "../include/multi_session_util.h"
 #include "ros/init.h"
 
 typedef pcl::PointXYZI PointType;
 typedef pcl::PointCloud<PointType> PointCloud;
+
+// Global variables for multi-session
+// int multisession_mode = 0;
+// std::string save_directory;
+// std::vector<Eigen::Affine3d> keyframe_poses_prior;
+// std::vector<PointCloud::Ptr> keyframe_clouds_prior;
 
 std::mutex laser_mtx;
 std::mutex odom_mtx;
@@ -177,7 +184,7 @@ void visualizeLoopClosure(
 
 int main(int argc, char **argv)
 {
-  ros::init(argc, argv, "online_demo");
+  ros::init(argc, argv, "online_multi_session_demo");
   ros::NodeHandle nh;
 
   ConfigSetting config_setting;
@@ -209,13 +216,17 @@ int main(int argc, char **argv)
   ros::Publisher pubLoopConstraintEdge =
       nh.advertise<visualization_msgs::MarkerArray>("/loop_closure_constraints",
                                                     10); // key
-
+  ros::Publisher pubMSLoopConstraintEdge =
+      nh.advertise<visualization_msgs::MarkerArray>("/ms_loop_closure_constraints", 10);
+  ros::Publisher pubRefMap =
+      nh.advertise<sensor_msgs::PointCloud2>("/ref_map", 1, true);
   ros::Subscriber subLaserCloud = nh.subscribe<sensor_msgs::PointCloud2>(
       "/cloud_registered_body", 100, laserCloudHandler);
   ros::Subscriber subOdom =
       nh.subscribe<nav_msgs::Odometry>("/aft_mapped_to_init", 100, OdomHandler);
 
   STDescManager *std_manager = new STDescManager(config_setting);
+  std::shared_ptr<STDescManager> std_manager_prior(new STDescManager(config_setting));
 
   gtsam::Values initial;
   gtsam::NonlinearFactorGraph graph;
@@ -255,6 +266,13 @@ int main(int argc, char **argv)
   std::vector<Eigen::Affine3d> keyframe_pose_vec;
   std::vector<std::pair<int, int>> loop_container;
 
+  std::vector<Eigen::Affine3d> ref_keyframe_poses;
+  std::vector<PointCloud::Ptr> ref_keyframe_clouds;
+  // std::vector<std::pair<STDesc, STDesc>> ms_loop_std_pair;
+  std::vector<InterSessionLoop> inter_session_loops;            // 累积所有 inter-session loops，用于估计 T_W1_to_W0_est
+  Eigen::Affine3d T_W1_to_W0_est = Eigen::Affine3d::Identity(); // ★ 当前估计的会话间变换
+  bool has_T_W1_to_W0 = false;                                  // ★ 是否已有有效估计
+
   PointCloud::Ptr key_cloud(new PointCloud);
 
   bool has_loop_flag = false;
@@ -273,9 +291,40 @@ int main(int argc, char **argv)
   bool keyframes_saved = false; // 标记是否已经保存过关键帧
   ros::WallTime last_data_time = ros::WallTime::now();
 
+  if (config_setting.multi_session_mode_ == 1)
+  {
+    // 注意这里传的是 session_id = 0，且 std_manager 作为 “参考库”
+    if (!loadSessionAndBuildSTD(ref_keyframe_poses,
+                                ref_keyframe_clouds,
+                                config_setting,
+                                0,
+                                std_manager_prior))
+    {
+      ROS_ERROR("Failed to load reference session & build STD DB.");
+    }
+    else
+    {
+      ROS_INFO("Reference session loaded, keyframes = %zu",
+               ref_keyframe_poses.size());
+    }
+
+    // 额外：把 ref_keyframe_clouds + poses 累加一张 ref_map 用于 RViz 显示
+    PointCloud::Ptr ref_full_map(new PointCloud);
+    sensor_msgs::PointCloud2 map_msg;
+    for (auto &cloud : ref_keyframe_clouds)
+    {
+      pcl::toROSMsg(*cloud, map_msg);
+      map_msg.header.frame_id = "camera_init";
+      pubRefMap.publish(map_msg);
+    }
+    // *ref_full_map += *cloud;
+
+    // 发布一个 latched map
+  }
+
   while (ros::ok())
   {
-    // ros::spinOnce();
+    // ros::spinOose_vence();
     PointCloud::Ptr current_cloud_body(new PointCloud);
     PointCloud::Ptr current_cloud_world(new PointCloud);
     Eigen::Affine3d pose;
@@ -295,7 +344,7 @@ int main(int argc, char **argv)
       origin_pose_vec.push_back(pose);
       PointCloud origin_cloud;
       pcl::transformPointCloud(*current_cloud_body, origin_cloud,
-                               origin_estimate_affine3d); // 这里为什么不直接发布current_cloud_world然后再降采样呢?
+                               origin_estimate_affine3d);
       sensor_msgs::PointCloud2 pub_cloud;
       pcl::toROSMsg(origin_cloud, pub_cloud);
       pub_cloud.header.frame_id = "camera_init";
@@ -355,6 +404,78 @@ int main(int argc, char **argv)
 
         // step3. Add descriptors to the database
         std_manager->AddSTDescs(stds_vec);
+
+        // ----------------- multi-session loop detection（session1 → session0） -----------------
+        std::pair<int, double> ms_search_result(-1, 0);
+        std::pair<Eigen::Vector3d, Eigen::Matrix3d> ms_loop_transform;
+        ms_loop_transform.first << 0, 0, 0;
+        ms_loop_transform.second = Eigen::Matrix3d::Identity();
+        std::vector<std::pair<STDesc, STDesc>> ms_loop_std_pair;
+        if (config_setting.multi_session_mode_ == 1)
+        {
+          // 1) 用 prior manager 再生成一遍当前 keyframe 的 ST 描述子（保证平面索引正确）
+          std::vector<STDesc> ms_stds_vec;
+          std_manager_prior->GenerateSTDescs(key_cloud, ms_stds_vec);
+
+          if (!ms_stds_vec.empty())
+          {
+            // 2) 在 session0 的 STD 数据库上搜索 inter-session loop
+            std_manager_prior->SearchLoop(
+                ms_stds_vec,
+                ms_search_result,
+                ms_loop_transform,
+                ms_loop_std_pair,
+                std_manager_prior->data_base_,
+                /*mode =*/1);
+
+            int ms_match_kf = ms_search_result.first;  // session0 中的 keyframe id
+            double ms_score = ms_search_result.second; // 匹配得分
+
+            if (ms_match_kf >= 0 && ms_score > config_setting.inter_session_icp_threshold_)
+            {
+              // 3) 平面几何 ICP 再 refinement（几何一致性验证）
+              std_manager_prior->PlaneGeometricIcp(
+                  std_manager_prior->plane_cloud_vec_.back(),       // 当前 keyframe 的平面（session1）
+                  std_manager_prior->plane_cloud_vec_[ms_match_kf], // session0 中匹配的平面
+                  ms_loop_transform);
+
+              // 4) 把当前这次 inter-session loop 记录到数组里，后面用 estimateSessionTransform 做加权平均
+              InterSessionLoop ms_loop;
+              ms_loop.ref_kf = ms_match_kf;                            // session0 keyframe id
+              ms_loop.cur_kf = keyCloudInd;                            // session1 keyframe id（当前 keyframe 的索引）
+              ms_loop.score = ms_score;                                // 用 icp / matching score 当权重
+              ms_loop.relative_pose.first = ms_loop_transform.first;   // t
+              ms_loop.relative_pose.second = ms_loop_transform.second; // R
+              ms_loop.match_pairs = ms_loop_std_pair;                  // 可选，调试可用
+
+              inter_session_loops.push_back(ms_loop);
+
+              // 5) 使用所有累计的 inter-session loops，估计加权平均的 T_W1_to_W0_est
+              T_W1_to_W0_est = estimateSessionTransform(inter_session_loops, true);
+              has_T_W1_to_W0 = true;
+              // 日志：输出累计使用了多少个 loop，以及当前估计的 T_W1_to_W0_est
+              Eigen::Vector3d t_w1w0 = T_W1_to_W0_est.translation();
+              Eigen::Vector3d rpy = T_W1_to_W0_est.rotation().eulerAngles(2, 1, 0); // yaw-pitch-roll
+
+              ROS_INFO_STREAM("[MS Loop] use " << inter_session_loops.size()
+                                               << " loops, new loop: session1 kf " << keyCloudInd
+                                               << ", session0 kf " << ms_match_kf
+                                               << ", score = " << ms_score
+                                               << ", T_W1_to_W0_est translation = "
+                                               << t_w1w0.transpose()
+                                               << ", yaw(deg) = " << rpy[0] * 57.3);
+
+              // 6) 可视化：画一条红色线把当前 keyframe 和匹配的 prior keyframe 连起来
+              //    这里的可视化仍然用当前估计的位姿，不依赖 T_W1_to_W0_est
+              // Eigen::Affine3d pose_cur_w1 = keyframe_pose_vec.back();        // 当前 session1 keyframe 在 W1 下
+              // Eigen::Affine3d pose_ref_w0 = ref_keyframe_poses[ms_match_kf]; // session0 keyframe 在 W0 下
+
+              // visualizeMultiSessionLoop(pubMSLoopConstraintEdge,
+              //                           pose_cur_w1,
+              //                           pose_ref_w0);
+            }
+          }
+        }
 
         // publish
         sensor_msgs::PointCloud2 pub_cloud;
@@ -460,7 +581,7 @@ int main(int argc, char **argv)
         for (int i = 0; i < pose_vec.size(); ++i)
         {
           PointCloud correct_cloud;
-          pcl::transformPointCloud(*cloud_vec[i], correct_cloud, pose_vec[i]);
+          pcl::transformPointCloud(*cloud_vec[i], correct_cloud, T_W1_to_W0_est * pose_vec[i]);
           full_map += correct_cloud;
         }
         sensor_msgs::PointCloud2 pub_cloud;
@@ -470,14 +591,32 @@ int main(int argc, char **argv)
 
         // publish corerct path
         nav_msgs::Path correct_path;
+        // for (int i = 0; i < pose_vec.size(); i += 1)
+        // {
+
+        //   geometry_msgs::PoseStamped msg_pose;
+        //   msg_pose.pose.position.x = pose_vec[i].translation()[0];
+        //   msg_pose.pose.position.y = pose_vec[i].translation()[1];
+        //   msg_pose.pose.position.z = pose_vec[i].translation()[2];
+        //   Eigen::Quaterniond pose_q(pose_vec[i].rotation());
+        //   msg_pose.header.frame_id = "camera_init";
+        //   msg_pose.pose.orientation.x = pose_q.x();
+        //   msg_pose.pose.orientation.y = pose_q.y();
+        //   msg_pose.pose.orientation.z = pose_q.z();
+        //   msg_pose.pose.orientation.w = pose_q.w();
+        //   correct_path.poses.push_back(msg_pose);
+        // }
+        correct_path.header.stamp = ros::Time::now();
+        correct_path.header.frame_id = "camera_init";
         for (int i = 0; i < pose_vec.size(); i += 1)
         {
+          Eigen::Affine3d pose_w0 = T_W1_to_W0_est * pose_vec[i];
 
           geometry_msgs::PoseStamped msg_pose;
-          msg_pose.pose.position.x = pose_vec[i].translation()[0];
-          msg_pose.pose.position.y = pose_vec[i].translation()[1];
-          msg_pose.pose.position.z = pose_vec[i].translation()[2];
-          Eigen::Quaterniond pose_q(pose_vec[i].rotation());
+          msg_pose.pose.position.x = pose_w0.translation()[0];
+          msg_pose.pose.position.y = pose_w0.translation()[1];
+          msg_pose.pose.position.z = pose_w0.translation()[2];
+          Eigen::Quaterniond pose_q(pose_w0.rotation());
           msg_pose.header.frame_id = "camera_init";
           msg_pose.pose.orientation.x = pose_q.x();
           msg_pose.pose.orientation.y = pose_q.y();
@@ -485,8 +624,6 @@ int main(int argc, char **argv)
           msg_pose.pose.orientation.w = pose_q.w();
           correct_path.poses.push_back(msg_pose);
         }
-        correct_path.header.stamp = ros::Time::now();
-        correct_path.header.frame_id = "camera_init";
         pubCorrectPath.publish(correct_path);
       }
 
@@ -537,6 +674,66 @@ int main(int argc, char **argv)
         }
         pose_file.close();
         ROS_INFO("saving done!");
+
+        // -- -- -- -- --新增：保存“对齐到 session0 世界系 W0 的全局地图”-- -- -- -- --
+        if (has_T_W1_to_W0)
+        {
+          ROS_INFO("Saving aligned global map (session1 warped to session0 frame W0)...");
+          ROS_INFO_STREAM("Keyframe size of prior session:"
+                          << ref_keyframe_clouds.size()
+                          << "\nKeyframe size of current session:"
+                          << std_manager->key_cloud_vec_.size());
+          // 1) 把当前 session1 的关键帧点云从 W1 映射到 W0
+          PointCloud aligned_session1_map;
+          for (size_t i = 0; i < std_manager->key_cloud_vec_.size(); ++i)
+          {
+            PointCloud transformed;
+            // key_cloud_vec_[i] 已经在 W1 下，直接乘 T_W1_to_W0_est 即可变到 W0
+            pcl::transformPointCloud(*std_manager->key_cloud_vec_[i],
+                                     transformed,
+                                     T_W1_to_W0_est);
+            aligned_session1_map += transformed;
+          }
+          ROS_INFO_STREAM("aligned_session1_map size = " << aligned_session1_map.size());
+
+          // 2) 把先验 session0 的 keyframe 点云（本来就在 W0）叠加上去，得到最终全局地图
+          PointCloud final_global_map = aligned_session1_map;
+          for (const auto &cloud_ref : ref_keyframe_clouds)
+          {
+            final_global_map += *cloud_ref;
+          }
+          ROS_INFO_STREAM("final_global_map size before downsample = "
+                          << final_global_map.size());
+
+          // 3) 下采样再保存
+          ROS_INFO("Start down_sampling_voxel...");
+          down_sampling_voxel(final_global_map, 0.05);
+          ROS_INFO("Finish down_sampling_voxel.");
+
+          std::string aligned_dir = config_setting.pos_dir_ + "aligned/";
+          boost::filesystem::create_directories(aligned_dir);
+          std::string aligned_map_file = aligned_dir + "global_map_W0.pcd";
+
+          ROS_INFO_STREAM("Start savePCDFileBinary: " << aligned_map_file);
+          int ret = pcl::io::savePCDFileBinary(aligned_map_file, final_global_map);
+          ROS_INFO_STREAM("Aligned global map saved to: " << aligned_map_file);
+          if (ret < 0)
+          {
+            ROS_ERROR_STREAM("savePCDFileBinary failed, code = " << ret
+                                                                 << ", path = " << aligned_map_file);
+          }
+          else
+          {
+            ROS_INFO_STREAM("Aligned global map saved to: " << aligned_map_file
+                                                            << ", points = " << final_global_map.size());
+          }
+
+          ROS_INFO_STREAM("Aligned global map saved to: " << aligned_map_file);
+        }
+        else
+        {
+          ROS_WARN("No valid T_W1_to_W0 estimation yet, skip saving aligned global map.");
+        }
       }
     }
   }

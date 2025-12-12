@@ -38,16 +38,11 @@ keyframe:
   pos_dir: "/root/catkin_ws/src/STD/keyframe/"
   # session_id: 1
 
-multisession_mode: 2  
-save_directory: "/root/catkin_ws/src/STD/std_sessions/session0/"
-inter_session_icp_threshold: 0.3
+# multisession_mode: 1  
+# save_directory: "/root/catkin_ws/src/STD/std_sessions/session0/"
+inter_session_icp_threshold: 0.2
 
 multi_session:
-  # mode: 1 #0: disable, 1: offline, 2: online
-  cur_dir: "/root/catkin_ws/src/STD/std_sessions/session1/"
-  ref_dir: "/root/catkin_ws/src/STD/std_sessions/session0/"
-# 添加以下参数
-optimize:
-  odom_noise: [0.01, 0.01, 0.0005, 0.0005, 0.0005, 0.05]
-  loop_noise_min: [0.1, 0.1, 0.001, 0.001, 0.001, 0.05]
-  loop_noise_max: [0.01, 0.01, 0.0001, 0.0001, 0.0001, 0.005]
+  mode: 0 #0: disable, 1: offline, 2: online
+  cur_dir: "/root/catkin_ws/data/session0/"
+  ref_dir: "/root/catkin_ws/data/session1/"

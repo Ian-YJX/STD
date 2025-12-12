@@ -119,13 +119,19 @@ void read_parameters(ros::NodeHandle &nh, ConfigSetting &config_setting)
   std::cout << "----------------Main Parameters-------------------"
             << std::endl;
   std::cout << "voxel size:" << config_setting.voxel_size_ << std::endl;
-  std::cout << "loop detection threshold: " << config_setting.icp_threshold_
+  std::cout << "intra session loop detection threshold: " << config_setting.icp_threshold_
             << std::endl;
   std::cout << "sub-frame number: " << config_setting.sub_frame_num_
             << std::endl;
   std::cout << "candidate number: " << config_setting.candidate_num_
             << std::endl;
   std::cout << "maximum corners size: " << config_setting.maximum_corner_num_
+            << std::endl;
+  std::cout << "multi_session mode: " << config_setting.multi_session_mode_
+            << std::endl;
+  std::cout << "cur_dir: " << config_setting.cur_dir_
+            << std::endl;
+  std::cout << "ref_dir: " << config_setting.ref_dir_
             << std::endl;
 }
 void load_pose(const std::string &pose_file,
@@ -423,7 +429,7 @@ void STDescManager::SearchLoop(
     std::vector<std::pair<STDesc, STDesc>> &loop_std_pair,
     STDDatabase &db)
 {
-    SearchLoop(stds_vec, loop_result, loop_transform, loop_std_pair, db, 0);
+  SearchLoop(stds_vec, loop_result, loop_transform, loop_std_pair, db, 0);
 }
 
 void STDescManager::SearchLoop(
@@ -1821,6 +1827,7 @@ void STDescManager::saveDatabase(std::string &filename)
 
 void STDescManager::loadDatabase(std::string &filename)
 {
+  // 待修改：处理plane_vec功能暂缺
   std::ifstream fin(filename);
   if (!fin.is_open())
   {
