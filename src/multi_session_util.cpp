@@ -221,7 +221,7 @@ bool detectInterSessionLoops(
         int ref_kf = loop_result.first;    // session0 的关键帧索引
         double score = loop_result.second; // 平面 ICP 得到的匹配得分
 
-        if (ref_kf >= 0 && score > config_setting.icp_threshold_)
+        if (ref_kf >= 0 && score > config_setting.inter_session_icp_threshold_)
         {
             InterSessionLoop loop;
             loop.ref_kf = ref_kf;

@@ -17,7 +17,8 @@
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <thread>
-
+#include <tf2_ros/transform_broadcaster.h>
+#include <geometry_msgs/TransformStamped.h>
 #include "../include/STDesc.h"
 #include "../include/multi_session_util.h"
 #include "ros/init.h"
@@ -189,11 +190,13 @@ int main(int argc, char **argv)
 
   ConfigSetting config_setting;
   read_parameters(nh, config_setting);
+  static const std::string W0_FRAME = "camera_init";   // session0
+  static const std::string W1_FRAME = "session1_init"; // session1
 
   // ros::Publisher pubOdomAftMapped =
   // nh.advertise<nav_msgs::Odometry>("/aft_mapped_to_init", 10);
   ros::Publisher pubCurrentCloud =
-      nh.advertise<sensor_msgs::PointCloud2>("/cloud_current", 100);
+      nh.advertise<sensor_msgs::PointCloud2>("/cloud_registered", 100);
   ros::Publisher pubCurrentCorner =
       nh.advertise<sensor_msgs::PointCloud2>("/cloud_key_points", 100); // key
   ros::Publisher pubMatchedCloud =
@@ -218,8 +221,9 @@ int main(int argc, char **argv)
                                                     10); // key
   ros::Publisher pubMSLoopConstraintEdge =
       nh.advertise<visualization_msgs::MarkerArray>("/ms_loop_closure_constraints", 10);
-  ros::Publisher pubRefMap =
-      nh.advertise<sensor_msgs::PointCloud2>("/ref_map", 1, true);
+  ros::Publisher pubSession0Cloud =
+      nh.advertise<sensor_msgs::PointCloud2>("/cloud_session0", 1, true);
+
   ros::Subscriber subLaserCloud = nh.subscribe<sensor_msgs::PointCloud2>(
       "/cloud_registered_body", 100, laserCloudHandler);
   ros::Subscriber subOdom =
@@ -309,19 +313,53 @@ int main(int argc, char **argv)
     }
 
     // 额外：把 ref_keyframe_clouds + poses 累加一张 ref_map 用于 RViz 显示
-    PointCloud::Ptr ref_full_map(new PointCloud);
+    // PointCloud::Ptr ref_full_map(new PointCloud);
+    // sensor_msgs::PointCloud2 map_msg;
+    // for (auto &cloud : ref_keyframe_clouds)
+    // {
+    //   pcl::toROSMsg(*cloud, map_msg);
+    //   map_msg.header.frame_id = W0_FRAME;
+    //   pubSession0Cloud.publish(map_msg);
+    // }
     sensor_msgs::PointCloud2 map_msg;
     for (auto &cloud : ref_keyframe_clouds)
     {
       pcl::toROSMsg(*cloud, map_msg);
-      map_msg.header.frame_id = "camera_init";
-      pubRefMap.publish(map_msg);
+      map_msg.header.frame_id = W0_FRAME;
+      map_msg.header.stamp = ros::Time::now();
+      pubSession0Cloud.publish(map_msg);
+
+      ros::WallDuration(0.02).sleep(); // 20ms，防止RViz/ROS被瞬时打爆
     }
+    ROS_INFO("Published session0 keyframes to /cloud_session0");
+
     // *ref_full_map += *cloud;
 
     // 发布一个 latched map
   }
+  tf2_ros::TransformBroadcaster tf_br;
 
+  auto publishW0W1TF = [&](const Eigen::Affine3d &T_W1_to_W0_est)
+  {
+    Eigen::Affine3d T_W0_to_W1 = T_W1_to_W0_est.inverse();
+
+    Eigen::Quaterniond q(T_W0_to_W1.rotation());
+    Eigen::Vector3d t = T_W0_to_W1.translation();
+
+    geometry_msgs::TransformStamped tf_msg;
+    tf_msg.header.stamp = ros::Time::now();
+    tf_msg.header.frame_id = W0_FRAME; // parent: W0
+    tf_msg.child_frame_id = W1_FRAME;  // child : W1
+    tf_msg.transform.translation.x = t.x();
+    tf_msg.transform.translation.y = t.y();
+    tf_msg.transform.translation.z = t.z();
+    tf_msg.transform.rotation.w = q.w();
+    tf_msg.transform.rotation.x = q.x();
+    tf_msg.transform.rotation.y = q.y();
+    tf_msg.transform.rotation.z = q.z();
+
+    tf_br.sendTransform(tf_msg);
+  };
   while (ros::ok())
   {
     // ros::spinOose_vence();
@@ -333,6 +371,7 @@ int main(int argc, char **argv)
     //   cout << flag << endl;
     if (flag)
     {
+      publishW0W1TF(T_W1_to_W0_est);
       last_data_time = ros::WallTime::now();
       auto origin_estimate_affine3d = pose;
       pcl::transformPointCloud(*current_cloud_body, *current_cloud_world, pose);
@@ -347,12 +386,12 @@ int main(int argc, char **argv)
                                origin_estimate_affine3d);
       sensor_msgs::PointCloud2 pub_cloud;
       pcl::toROSMsg(origin_cloud, pub_cloud);
-      pub_cloud.header.frame_id = "camera_init";
+      pub_cloud.header.frame_id = W1_FRAME;
       pubOriginCloud.publish(pub_cloud);
 
       Eigen::Quaterniond _r(origin_estimate_affine3d.rotation());
       nav_msgs::Odometry odom;
-      odom.header.frame_id = "camera_init";
+      odom.header.frame_id = W1_FRAME;
       odom.pose.pose.position.x = origin_estimate_affine3d.translation().x();
       odom.pose.pose.position.y = origin_estimate_affine3d.translation().y();
       odom.pose.pose.position.z = origin_estimate_affine3d.translation().z();
@@ -453,17 +492,18 @@ int main(int argc, char **argv)
               // 5) 使用所有累计的 inter-session loops，估计加权平均的 T_W1_to_W0_est
               T_W1_to_W0_est = estimateSessionTransform(inter_session_loops, true);
               has_T_W1_to_W0 = true;
+              publishW0W1TF(T_W1_to_W0_est);
+
               // 日志：输出累计使用了多少个 loop，以及当前估计的 T_W1_to_W0_est
               Eigen::Vector3d t_w1w0 = T_W1_to_W0_est.translation();
               Eigen::Vector3d rpy = T_W1_to_W0_est.rotation().eulerAngles(2, 1, 0); // yaw-pitch-roll
 
-              ROS_INFO_STREAM("[MS Loop] use " << inter_session_loops.size()
-                                               << " loops, new loop: session1 kf " << keyCloudInd
-                                               << ", session0 kf " << ms_match_kf
-                                               << ", score = " << ms_score
-                                               << ", T_W1_to_W0_est translation = "
-                                               << t_w1w0.transpose()
-                                               << ", yaw(deg) = " << rpy[0] * 57.3);
+              ROS_INFO_STREAM("[MS Loop]: session1 kf " << keyCloudInd
+                                                        << ", session0 kf " << ms_match_kf
+                                                        << ", score = " << ms_score
+                                                        << ", T_W1_to_W0_est translation = "
+                                                        << t_w1w0.transpose()
+                                                        << ", yaw(deg) = " << rpy[0] * 57.3);
 
               // 6) 可视化：画一条红色线把当前 keyframe 和匹配的 prior keyframe 连起来
               //    这里的可视化仍然用当前估计的位姿，不依赖 T_W1_to_W0_est
@@ -479,11 +519,17 @@ int main(int argc, char **argv)
 
         // publish
         sensor_msgs::PointCloud2 pub_cloud;
+        // pcl::toROSMsg(*key_cloud, pub_cloud);
+        // pub_cloud.header.frame_id = "camera_init";
+        // pubCurrentCloud.publish(pub_cloud);
+
         pcl::toROSMsg(*key_cloud, pub_cloud);
-        pub_cloud.header.frame_id = "camera_init";
+        pub_cloud.header.frame_id = W1_FRAME;
+        pub_cloud.header.stamp = ros::Time::now();
         pubCurrentCloud.publish(pub_cloud);
+
         pcl::toROSMsg(*std_manager->corner_cloud_vec_.back(), pub_cloud);
-        pub_cloud.header.frame_id = "camera_init";
+        pub_cloud.header.frame_id = W1_FRAME;
         pubCurrentCorner.publish(pub_cloud);
 
         std_manager->key_cloud_vec_.push_back(key_cloud->makeShared());
@@ -543,12 +589,12 @@ int main(int argc, char **argv)
 
           pcl::toROSMsg(*std_manager->key_cloud_vec_[search_result.first],
                         pub_cloud);
-          pub_cloud.header.frame_id = "camera_init";
+          pub_cloud.header.frame_id = W1_FRAME;
           pubMatchedCloud.publish(pub_cloud);
 
           pcl::toROSMsg(*std_manager->corner_cloud_vec_[search_result.first],
                         pub_cloud);
-          pub_cloud.header.frame_id = "camera_init";
+          pub_cloud.header.frame_id = W1_FRAME;
           pubMatchedCorner.publish(pub_cloud);
           publish_std_pairs(loop_std_pair, pubSTD);
         }
@@ -581,51 +627,93 @@ int main(int argc, char **argv)
         for (int i = 0; i < pose_vec.size(); ++i)
         {
           PointCloud correct_cloud;
-          pcl::transformPointCloud(*cloud_vec[i], correct_cloud, T_W1_to_W0_est * pose_vec[i]);
+          pcl::transformPointCloud(*cloud_vec[i], correct_cloud, pose_vec[i]);
           full_map += correct_cloud;
         }
         sensor_msgs::PointCloud2 pub_cloud;
         pcl::toROSMsg(full_map, pub_cloud);
-        pub_cloud.header.frame_id = "camera_init";
+        pub_cloud.header.frame_id = W1_FRAME;
         pubCorrectCloud.publish(pub_cloud);
 
         // publish corerct path
         nav_msgs::Path correct_path;
-        // for (int i = 0; i < pose_vec.size(); i += 1)
-        // {
-
-        //   geometry_msgs::PoseStamped msg_pose;
-        //   msg_pose.pose.position.x = pose_vec[i].translation()[0];
-        //   msg_pose.pose.position.y = pose_vec[i].translation()[1];
-        //   msg_pose.pose.position.z = pose_vec[i].translation()[2];
-        //   Eigen::Quaterniond pose_q(pose_vec[i].rotation());
-        //   msg_pose.header.frame_id = "camera_init";
-        //   msg_pose.pose.orientation.x = pose_q.x();
-        //   msg_pose.pose.orientation.y = pose_q.y();
-        //   msg_pose.pose.orientation.z = pose_q.z();
-        //   msg_pose.pose.orientation.w = pose_q.w();
-        //   correct_path.poses.push_back(msg_pose);
-        // }
-        correct_path.header.stamp = ros::Time::now();
-        correct_path.header.frame_id = "camera_init";
         for (int i = 0; i < pose_vec.size(); i += 1)
         {
-          Eigen::Affine3d pose_w0 = T_W1_to_W0_est * pose_vec[i];
 
           geometry_msgs::PoseStamped msg_pose;
-          msg_pose.pose.position.x = pose_w0.translation()[0];
-          msg_pose.pose.position.y = pose_w0.translation()[1];
-          msg_pose.pose.position.z = pose_w0.translation()[2];
-          Eigen::Quaterniond pose_q(pose_w0.rotation());
-          msg_pose.header.frame_id = "camera_init";
+          msg_pose.pose.position.x = pose_vec[i].translation()[0];
+          msg_pose.pose.position.y = pose_vec[i].translation()[1];
+          msg_pose.pose.position.z = pose_vec[i].translation()[2];
+          Eigen::Quaterniond pose_q(pose_vec[i].rotation());
+          msg_pose.header.frame_id = W1_FRAME;
           msg_pose.pose.orientation.x = pose_q.x();
           msg_pose.pose.orientation.y = pose_q.y();
           msg_pose.pose.orientation.z = pose_q.z();
           msg_pose.pose.orientation.w = pose_q.w();
           correct_path.poses.push_back(msg_pose);
         }
+        correct_path.header.stamp = ros::Time::now();
+        correct_path.header.frame_id = W1_FRAME;
         pubCorrectPath.publish(correct_path);
       }
+
+      // if (has_loop_flag)
+      // {
+      //   // publish correct cloud map
+      //   PointCloud full_map;
+      //   for (int i = 0; i < pose_vec.size(); ++i)
+      //   {
+      //     PointCloud correct_cloud;
+      //     // pcl::transformPointCloud(*cloud_vec[i], correct_cloud, T_W1_to_W0_est * pose_vec[i]);
+      //     // full_map += correct_cloud;
+      //     pcl::transformPointCloud(*cloud_vec[i], correct_cloud, pose_vec[i]);
+      //     sensor_msgs::PointCloud2 msg;
+      //     pcl::toROSMsg(correct_cloud, msg);
+      //     msg.header.frame_id = W1_FRAME;
+      //     msg.header.stamp = ros::Time::now();
+      //     pubCurrentCloud.publish(msg);
+      //   }
+      //   // sensor_msgs::PointCloud2 pub_cloud;
+      //   // pcl::toROSMsg(full_map, pub_cloud);
+      //   // pub_cloud.header.frame_id = "camera_init";
+      //   // pubCorrectCloud.publish(pub_cloud);
+
+      //   // publish corerct path
+      //   nav_msgs::Path correct_path;
+      //   // for (int i = 0; i < pose_vec.size(); i += 1)
+      //   // {
+
+      //   //   geometry_msgs::PoseStamped msg_pose;
+      //   //   msg_pose.pose.position.x = pose_vec[i].translation()[0];
+      //   //   msg_pose.pose.position.y = pose_vec[i].translation()[1];
+      //   //   msg_pose.pose.position.z = pose_vec[i].translation()[2];
+      //   //   Eigen::Quaterniond pose_q(pose_vec[i].rotation());
+      //   //   msg_pose.header.frame_id = "camera_init";
+      //   //   msg_pose.pose.orientation.x = pose_q.x();
+      //   //   msg_pose.pose.orientation.y = pose_q.y();
+      //   //   msg_pose.pose.orientation.z = pose_q.z();
+      //   //   msg_pose.pose.orientation.w = pose_q.w();
+      //   //   correct_path.poses.push_back(msg_pose);
+      //   // }
+      //   correct_path.header.stamp = ros::Time::now();
+      //   correct_path.header.frame_id = W1_FRAME;
+      //   for (int i = 0; i < pose_vec.size(); i += 1)
+      //   {
+      //     // Eigen::Affine3d pose_w0 = T_W1_to_W0_est * pose_vec[i];
+      //     geometry_msgs::PoseStamped msg_pose;
+      //     msg_pose.pose.position.x = pose_vec[i].translation()[0];
+      //     msg_pose.pose.position.y = pose_vec[i].translation()[1];
+      //     msg_pose.pose.position.z = pose_vec[i].translation()[2];
+      //     Eigen::Quaterniond pose_q(pose_vec[i].rotation());
+      //     msg_pose.header.frame_id = W1_FRAME;
+      //     msg_pose.pose.orientation.x = pose_q.x();
+      //     msg_pose.pose.orientation.y = pose_q.y();
+      //     msg_pose.pose.orientation.z = pose_q.z();
+      //     msg_pose.pose.orientation.w = pose_q.w();
+      //     correct_path.poses.push_back(msg_pose);
+      //   }
+      //   pubCorrectPath.publish(correct_path);
+      // }
 
       visualizeLoopClosure(pubLoopConstraintEdge, loop_container, pose_vec);
 
@@ -716,7 +804,7 @@ int main(int argc, char **argv)
 
           ROS_INFO_STREAM("Start savePCDFileBinary: " << aligned_map_file);
           int ret = pcl::io::savePCDFileBinary(aligned_map_file, final_global_map);
-          ROS_INFO_STREAM("Aligned global map saved to: " << aligned_map_file);
+          // ROS_INFO_STREAM("Aligned global map saved to: " << aligned_map_file);
           if (ret < 0)
           {
             ROS_ERROR_STREAM("savePCDFileBinary failed, code = " << ret
@@ -728,7 +816,7 @@ int main(int argc, char **argv)
                                                             << ", points = " << final_global_map.size());
           }
 
-          ROS_INFO_STREAM("Aligned global map saved to: " << aligned_map_file);
+          // ROS_INFO_STREAM("Aligned global map saved to: " << aligned_map_file);
         }
         else
         {
