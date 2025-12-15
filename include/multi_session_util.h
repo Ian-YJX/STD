@@ -14,7 +14,7 @@
 // Fwd declaration
 class STDescManager;
 struct ConfigSetting;
-typedef pcl::PointXYZI PointType;
+typedef pcl::PointXYZRGB PointType;
 typedef pcl::PointCloud<PointType> PointCloud;
 // Loop info
 struct InterSessionLoop

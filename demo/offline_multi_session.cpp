@@ -34,7 +34,7 @@
 // ----------------------------------
 // 一些 typedef
 // ----------------------------------
-using PointType = pcl::PointXYZI;
+using PointType = pcl::PointXYZRGB;
 using PointCloud = pcl::PointCloud<PointType>;
 
 // ----------------------------------

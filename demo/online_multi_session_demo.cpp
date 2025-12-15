@@ -23,7 +23,7 @@
 #include "../include/multi_session_util.h"
 #include "ros/init.h"
 
-typedef pcl::PointXYZI PointType;
+typedef pcl::PointXYZRGB PointType;
 typedef pcl::PointCloud<PointType> PointCloud;
 
 // Global variables for multi-session

@@ -21,7 +21,7 @@
 #include "include/STDesc.h"
 #include "ros/init.h"
 
-typedef pcl::PointXYZI PointType;
+typedef pcl::PointXYZRGB PointType;
 typedef pcl::PointCloud<PointType> PointCloud;
 
 std::mutex laser_mtx;

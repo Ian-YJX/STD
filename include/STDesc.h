@@ -12,6 +12,8 @@
 #include <iostream>
 #include <fstream>
 #include <mutex>
+#include <pcl/point_types.h>
+#include <pcl/point_cloud.h>
 #include <pcl/common/io.h>
 #include <pcl/kdtree/kdtree_flann.h>
 #include <ros/ros.h>
@@ -137,7 +139,7 @@ public:
 struct M_POINT
 {
   float xyz[3];
-  float intensity;
+  float rgb[3];
   int count = 0;
 };
 
@@ -241,7 +243,7 @@ public:
   void init_octo_tree();
 };
 
-void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZI> &pl_feat,
+void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZRGB> &pl_feat,
                          double voxel_size);
 void load_pose(const std::string &pose_file,
                std::vector<std::pair<Eigen::Vector3d, Eigen::Matrix3d>> &poses_vec);
@@ -255,8 +257,8 @@ void read_parameters(ros::NodeHandle &nh, ConfigSetting &config_setting);
 double time_inc(std::chrono::_V2::system_clock::time_point &t_end,
                 std::chrono::_V2::system_clock::time_point &t_begin);
 
-pcl::PointXYZI vec2point(const Eigen::Vector3d &vec);
-Eigen::Vector3d point2vec(const pcl::PointXYZI &pi);
+pcl::PointXYZRGB vec2point(const Eigen::Vector3d &vec);
+Eigen::Vector3d point2vec(const pcl::PointXYZRGB &pi);
 
 void publish_std_pairs(
     const std::vector<std::pair<STDesc, STDesc>> &match_std_pairs,
@@ -325,7 +327,7 @@ public:
   STDDatabase data_base_;
   // STDDatabase prior_data_base_; // save descriptors from past session
   // save all key clouds, optional
-  std::vector<pcl::PointCloud<pcl::PointXYZI>::Ptr> key_cloud_vec_;
+  std::vector<pcl::PointCloud<pcl::PointXYZRGB>::Ptr> key_cloud_vec_;
 
   // save all corner points, optional
   std::vector<pcl::PointCloud<pcl::PointXYZINormal>::Ptr> corner_cloud_vec_;
@@ -336,7 +338,7 @@ public:
   /*Three main processing functions*/
 
   // generate STDescs from a point cloud
-  void GenerateSTDescs(pcl::PointCloud<pcl::PointXYZI>::Ptr &input_cloud,
+  void GenerateSTDescs(pcl::PointCloud<pcl::PointXYZRGB>::Ptr &input_cloud,
                        std::vector<STDesc> &stds_vec);
 
   // search result <candidate_id, plane icp score>. -1 for no loop
@@ -366,7 +368,7 @@ private:
   /*Following are sub-processing functions*/
 
   // voxelization and plane detection
-  void init_voxel_map(const pcl::PointCloud<pcl::PointXYZI>::Ptr &input_cloud,
+  void init_voxel_map(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr &input_cloud,
                       std::unordered_map<VOXEL_LOC, OctoTree *> &voxel_map);
 
   // build connection for planes
@@ -379,7 +381,7 @@ private:
   // extract corner points from pre-build voxel map and clouds
   void
   corner_extractor(std::unordered_map<VOXEL_LOC, OctoTree *> &voxel_map,
-                   const pcl::PointCloud<pcl::PointXYZI>::Ptr &input_cloud,
+                   const pcl::PointCloud<pcl::PointXYZRGB>::Ptr &input_cloud,
                    pcl::PointCloud<pcl::PointXYZINormal>::Ptr &corner_points);
 
   void
