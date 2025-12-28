@@ -8,8 +8,7 @@ Panels:
         - /MarkerArray1
         - /PointCloud25
         - /Odometry1/Shape1
-        - /PointCloud28
-        - /PointCloud29
+        - /Path2
       Splitter Ratio: 0.5243902206420898
     Tree Height: 871
   - Class: rviz/Selection
@@ -29,7 +28,7 @@ Panels:
   - Class: rviz/Time
     Name: Time
     SyncMode: 0
-    SyncSource: ""
+    SyncSource: PointCloud2
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -37,15 +36,6 @@ Toolbars:
 Visualization Manager:
   Class: ""
   Displays:
-    - Alpha: 1
-      Class: rviz/Axes
-      Enabled: true
-      Length: 0.699999988079071
-      Name: Axes
-      Radius: 0.05999999865889549
-      Reference Frame: <Fixed Frame>
-      Show Trail: false
-      Value: true
     - Alpha: 0.800000011920929
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
@@ -184,7 +174,7 @@ Visualization Manager:
       Channel Name: intensity
       Class: rviz/PointCloud2
       Color: 255; 255; 255
-      Color Transformer: FlatColor
+      Color Transformer: RGB8
       Decay Time: 10000
       Enabled: true
       Invert Rainbow: true
@@ -220,7 +210,7 @@ Visualization Manager:
           Value: true
         Value: true
       Enabled: true
-      Keep: 1000000
+      Keep: 1
       Name: Odometry
       Position Tolerance: 0.10000000149011612
       Queue Size: 10
@@ -309,7 +299,7 @@ Visualization Manager:
       Head Diameter: 0.30000001192092896
       Head Length: 0.5
       Length: 0.30000001192092896
-      Line Style: Lines
+      Line Style: Billboards
       Line Width: 0.029999999329447746
       Name: Path
       Offset:
@@ -335,7 +325,7 @@ Visualization Manager:
       Channel Name: intensity
       Class: rviz/PointCloud2
       Color: 255; 255; 255
-      Color Transformer: Intensity
+      Color Transformer: ""
       Decay Time: 10000
       Enabled: true
       Invert Rainbow: false
@@ -348,7 +338,7 @@ Visualization Manager:
       Size (Pixels): 1
       Size (m): 0.009999999776482582
       Style: Points
-      Topic: /cloud_session1
+      Topic: /cloud_correct
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
@@ -368,14 +358,14 @@ Visualization Manager:
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
-        Max Value: 12.029398918151855
-        Min Value: -11.10319709777832
+        Max Value: -3.0368545055389404
+        Min Value: -5.869050025939941
         Value: true
       Axis: Z
       Channel Name: intensity
       Class: rviz/PointCloud2
       Color: 255; 255; 255
-      Color Transformer: AxisColor
+      Color Transformer: RGB8
       Decay Time: 100000
       Enabled: true
       Invert Rainbow: false
@@ -385,19 +375,43 @@ Visualization Manager:
       Position Transformer: XYZ
       Queue Size: 10
       Selectable: true
-      Size (Pixels): 3
-      Size (m): 0.009999999776482582
-      Style: Flat Squares
+      Size (Pixels): 1
+      Size (m): 0.10000000149011612
+      Style: Points
       Topic: /cloud_session0
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 25; 255; 0
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.5
+      Length: 0.30000001192092896
+      Line Style: Billboards
+      Line Width: 0.029999999329447746
+      Name: Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 25; 255; 255
+      Pose Style: Arrows
+      Queue Size: 10
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.25
+      Shaft Length: 0.5
+      Topic: /path_session0
+      Unreliable: false
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 0; 0; 0
     Default Light: true
-    Fixed Frame: camera_init
+    Fixed Frame: session0_init
     Frame Rate: 10
   Name: root
   Tools:
@@ -421,7 +435,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 286.07708740234375
+      Distance: 129.6879425048828
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -429,9 +443,9 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -29.76215171813965
-        Y: 4.512343883514404
-        Z: 27.242704391479492
+        X: 40.40961837768555
+        Y: -8.292020797729492
+        Z: 19.15948486328125
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
@@ -439,7 +453,7 @@ Visualization Manager:
       Near Clip Distance: 0.009999999776482582
       Pitch: 1.5697963237762451
       Target Frame: <Fixed Frame>
-      Yaw: 0.3717682361602783
+      Yaw: 3.1949548721313477
     Saved: ~
 Window Geometry:
   Displays:

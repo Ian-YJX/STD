@@ -4,7 +4,7 @@
   <arg name="rviz" default="true" />
   <rosparam command="load" file="$(find std_detector)/config/config_online.yaml" />
   <group if="$(arg rviz)">
-    <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz_std" args="-d $(find std_detector)/rviz_cfg/multi_session.rviz" />
+    <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz_std" args="-d $(find std_detector)/rviz_cfg/online_ms.rviz" />
   </group>
 
   <node

@@ -47,10 +47,15 @@ bool detectInterSessionLoops(
     const ConfigSetting &config_setting,
     std::vector<InterSessionLoop> &inter_loops);
 
+// Eigen::Affine3d estimateSessionTransform(
+//     const std::vector<InterSessionLoop> &inter_loops,
+//     bool yaw_only);
 Eigen::Affine3d estimateSessionTransform(
     const std::vector<InterSessionLoop> &inter_loops,
-    bool yaw_only);
-    
+    const Eigen::Affine3d &T_init,
+    bool yaw_only,
+    int max_iters);
+
 void visualizeMultiSessionLoop(
     const ros::Publisher &publisher,
     const Eigen::Affine3d &pose_cur,

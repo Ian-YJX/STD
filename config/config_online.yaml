@@ -40,9 +40,18 @@ keyframe:
 
 # multisession_mode: 1  
 # save_directory: "/root/catkin_ws/src/STD/std_sessions/session0/"
-inter_session_icp_threshold: 0.55
+inter_session_icp_threshold: 0.55 # real 0.5, simulation 0.55
 
 multi_session:
   mode: 1 #0: disable, 1: offline, 2: online
-  cur_dir: "/root/catkin_ws/data/red/"
-  ref_dir: "/root/catkin_ws/data/blue/"
+  cur_dir: "/root/catkin_ws/data_simu/red/"
+  ref_dir: "/root/catkin_ws/data_simu/blue/"
+  # cur_dir: "/root/catkin_ws/data_left&middle/left/"
+  # ref_dir: "/root/catkin_ws/data_left&middle/0825/"
+  # 4x4 矩阵，行优先展开
+  initial_T_W1_W0: [
+    -1.0,  0.0,  0.0, 80.0,
+     0.0, -1.0,  0.0,  0.0,
+     0.0,  0.0,  1.0,  0.0,
+     0.0,  0.0,  0.0,  1.0
+  ]

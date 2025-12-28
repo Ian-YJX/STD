@@ -23,6 +23,7 @@
 #include <unordered_map>
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
+#include <cassert>
 
 #define HASH_P 116101
 #define MAX_N 10000000000

@@ -643,8 +643,12 @@ int main(int argc, char **argv)
     }
 
     // ---- 3. 利用回环估计 T_W1_to_W0 （*关键使用 loop.relative_pose*）----
+    Eigen::Affine3d T_w1_to_w0_prior;
+    T_w1_to_w0_prior.translation() << 80, 0, 0;
+    T_w1_to_w0_prior.rotate(Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitZ()));
+
     Eigen::Affine3d T_W1_to_W0 =
-        estimateSessionTransform(inter_loops, true);
+        estimateSessionTransform(inter_loops, T_w1_to_w0_prior, true, 10);
 
     Eigen::Matrix4d T_mat = T_W1_to_W0.matrix();
     std::cout << "Estimated T_W1_to_W0 (4x4) using STD & ICP is:\n"

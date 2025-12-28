@@ -418,7 +418,8 @@ void STDescManager::GenerateSTDescs(
     //           << std::endl;
 
     // step4, generate stable triangle descriptors
-    stds_vec.clear();
+    // stds_vec.clear();
+    // assert(!corner_points->empty());
     build_stdesc(corner_points, stds_vec);
     // std::cout << "[Description] stds size:" << stds_vec.size() << std::endl;
 
@@ -800,7 +801,7 @@ void STDescManager::corner_extractor(
                                         continue;
                                     }
                                     for (size_t j = 0; j < voxel_map[connect_project_position]
-                                                                 ->voxel_points_.size();
+                                                               ->voxel_points_.size();
                                          j++)
                                     {
                                         proj_points.push_back(
@@ -817,6 +818,7 @@ void STDescManager::corner_extractor(
                             new pcl::PointCloud<pcl::PointXYZINormal>);
                         extract_corner(projection_center, projection_normal, proj_points,
                                        sub_corner_points);
+                        // assert(!sub_corner_points->empty());
                         for (auto pi : sub_corner_points->points)
                         {
                             prepare_corner_points->push_back(pi);
@@ -826,6 +828,7 @@ void STDescManager::corner_extractor(
             }
         }
     }
+    // assert(!prepare_corner_points->empty());
     non_maxi_suppression(prepare_corner_points);
 
     if (config_setting_.maximum_corner_num_ > prepare_corner_points->size())
@@ -1107,6 +1110,7 @@ void STDescManager::extract_corner(
             corner_points->points.push_back(pi);
         }
     }
+    // assert(!corner_points->points.empty());
     return;
 }
 

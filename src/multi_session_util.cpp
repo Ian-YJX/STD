@@ -328,25 +328,173 @@ bool detectInterSessionLoopForKeyframe(
 
 // 利用 inter_loops 里每条 loop 的 relative_pose（STD + plane ICP 得到的）
 // 直接估计 T_W1_to_W0
+// Eigen::Affine3d estimateSessionTransform(
+//     const std::vector<InterSessionLoop> &inter_loops,
+//     bool yaw_only = true) // 默认先用 yaw + 平移，环境近似平面
+// {
+//     Eigen::Affine3d T_W1_to_W0 = Eigen::Affine3d::Identity();
+
+//     if (inter_loops.empty())
+//     {
+//         std::cerr << "[estimateSessionTransformFromLoops_STD] No loops, return Identity.\n";
+//         return T_W1_to_W0;
+//     }
+
+//     // ------- 收集所有 loop 的 R, t, w -------
+//     struct LoopRT
+//     {
+//         double yaw;
+//         Eigen::Vector3d t;
+//         double w;
+//         Eigen::Matrix3d R;
+//     };
+
+//     std::vector<LoopRT> data;
+//     data.reserve(inter_loops.size());
+
+//     for (const auto &loop : inter_loops)
+//     {
+//         LoopRT item;
+//         item.R = loop.relative_pose.second;
+//         item.t = loop.relative_pose.first;
+//         item.w = std::max(loop.score, 1e-3); // 用 icp score 作为权重
+
+//         // 从 R 里提 yaw（ZYX: R = Rz(yaw)*Ry(pitch)*Rx(roll)）
+//         const Eigen::Matrix3d &R = item.R;
+//         double yaw = std::atan2(R(1, 0), R(0, 0));
+//         item.yaw = yaw;
+
+//         data.push_back(item);
+//     }
+
+//     // (可选) 简单的 outlier 剔除：按 yaw 的中值做一个粗过滤
+//     {
+//         std::vector<double> yaw_list;
+//         yaw_list.reserve(data.size());
+//         for (auto &d : data)
+//             yaw_list.push_back(d.yaw);
+
+//         std::sort(yaw_list.begin(), yaw_list.end());
+//         double yaw_med = yaw_list[yaw_list.size() / 2];
+
+//         const double yaw_thresh = 20.0 * M_PI / 180.0; // 例如 20 度以内保留
+//         std::vector<LoopRT> filtered;
+//         for (auto &d : data)
+//         {
+//             double diff = std::fabs(d.yaw - yaw_med);
+//             // 处理一下 2π 周期
+//             if (diff > M_PI)
+//                 diff = 2 * M_PI - diff;
+
+//             if (diff < yaw_thresh)
+//                 filtered.push_back(d);
+//         }
+
+//         if (!filtered.empty())
+//             data.swap(filtered);
+//     }
+
+//     if (data.empty())
+//     {
+//         std::cerr << "[estimateSessionTransformFromLoops_STD] All loops filtered out, return Identity.\n";
+//         return T_W1_to_W0;
+//     }
+
+//     // ------- 估计旋转 -------
+//     Eigen::Matrix3d R_avg = Eigen::Matrix3d::Identity();
+
+//     if (!yaw_only)
+//     {
+//         // 完整 3D 旋转加权平均（四元数）
+//         Eigen::Quaterniond q_ref(data.front().R);
+//         Eigen::Vector4d q_sum(0, 0, 0, 0);
+//         double w_sum = 0.0;
+
+//         for (auto &d : data)
+//         {
+//             Eigen::Quaterniond q_i(d.R);
+//             double w = d.w;
+//             if (q_ref.dot(q_i) < 0.0)
+//                 q_i.coeffs() *= -1.0; // 对齐符号，防止 q / -q 抵消
+
+//             q_sum += w * q_i.coeffs();
+//             w_sum += w;
+//         }
+
+//         q_sum /= std::max(w_sum, 1e-9);
+//         Eigen::Quaterniond q_avg(q_sum);
+//         q_avg.normalize();
+//         R_avg = q_avg.toRotationMatrix();
+//     }
+//     else
+//     {
+//         // 只平均 yaw（绕 z），避免 pitch/roll 漂
+//         double cos_sum = 0.0, sin_sum = 0.0;
+//         double w_sum = 0.0;
+
+//         for (auto &d : data)
+//         {
+//             double w = d.w;
+//             cos_sum += w * std::cos(d.yaw);
+//             sin_sum += w * std::sin(d.yaw);
+//             w_sum += w;
+//         }
+
+//         double yaw_avg = std::atan2(sin_sum, cos_sum);
+
+//         double cy = std::cos(yaw_avg);
+//         double sy = std::sin(yaw_avg);
+//         R_avg << cy, -sy, 0,
+//             sy, cy, 0,
+//             0, 0, 1;
+
+//         std::cout << "[estimateSessionTransformFromLoops_STD] use "
+//                   << data.size() << " loops, yaw-only:\n"
+//                   << "  yaw (deg) = " << yaw_avg * 180.0 / M_PI << std::endl;
+//     }
+
+//     // ------- 估计平移 -------
+//     Eigen::Vector3d t_sum(0, 0, 0);
+//     double t_w_sum = 0.0;
+//     for (auto &d : data)
+//     {
+//         t_sum += d.w * d.t;
+//         t_w_sum += d.w;
+//     }
+//     Eigen::Vector3d t_avg = t_sum / std::max(t_w_sum, 1e-9);
+
+//     T_W1_to_W0 = Eigen::Affine3d::Identity();
+//     T_W1_to_W0.linear() = R_avg;
+//     T_W1_to_W0.translation() = t_avg;
+
+//     std::cout << "[estimateSessionTransformFromLoops_STD] final T_W1_to_W0 (from STD relative poses):\n"
+//               << T_W1_to_W0.matrix() << std::endl;
+
+//     return T_W1_to_W0;
+// }
+
+// 给定先验初值 T_init，利用 inter_loops 迭代修正 T_W1_to_W0
 Eigen::Affine3d estimateSessionTransform(
     const std::vector<InterSessionLoop> &inter_loops,
-    bool yaw_only = true) // 默认先用 yaw + 平移，环境近似平面
+    const Eigen::Affine3d &T_init,
+    bool yaw_only,
+    int max_iters) 
 {
-    Eigen::Affine3d T_W1_to_W0 = Eigen::Affine3d::Identity();
+    Eigen::Affine3d T_W1_to_W0 = T_init;
 
     if (inter_loops.empty())
     {
-        std::cerr << "[estimateSessionTransformFromLoops_STD] No loops, return Identity.\n";
+        std::cerr << "[estimateSessionTransformFromLoops_STD] No loops, return T_init.\n";
         return T_W1_to_W0;
     }
 
     // ------- 收集所有 loop 的 R, t, w -------
     struct LoopRT
     {
-        double yaw;
-        Eigen::Vector3d t;
-        double w;
-        Eigen::Matrix3d R;
+        double yaw;              // 这里存的是残差的 yaw（每次迭代会更新）
+        Eigen::Vector3d t;       // loop 观测的 t
+        double w;                // 权重
+        Eigen::Matrix3d R;       // loop 观测的 R
     };
 
     std::vector<LoopRT> data;
@@ -358,120 +506,168 @@ Eigen::Affine3d estimateSessionTransform(
         item.R = loop.relative_pose.second;
         item.t = loop.relative_pose.first;
         item.w = std::max(loop.score, 1e-3); // 用 icp score 作为权重
-
-        // 从 R 里提 yaw（ZYX: R = Rz(yaw)*Ry(pitch)*Rx(roll)）
-        const Eigen::Matrix3d &R = item.R;
-        double yaw = std::atan2(R(1, 0), R(0, 0));
-        item.yaw = yaw;
-
+        item.yaw = 0.0; // 迭代里再算残差 yaw
         data.push_back(item);
     }
 
-    // (可选) 简单的 outlier 剔除：按 yaw 的中值做一个粗过滤
+    const double yaw_thresh = 20.0 * M_PI / 180.0;
+
+    for (int iter = 0; iter < max_iters; ++iter)
     {
+        // 当前估计的逆
+        Eigen::Affine3d T_inv = T_W1_to_W0.inverse();
+
+        // ------- 基于残差 E_i = T_i * T^{-1} 计算每条 loop 的残差 yaw，用于过滤 -------
         std::vector<double> yaw_list;
         yaw_list.reserve(data.size());
-        for (auto &d : data)
-            yaw_list.push_back(d.yaw);
 
+        for (auto &d : data)
+        {
+            Eigen::Affine3d T_i = Eigen::Affine3d::Identity();
+            T_i.linear() = d.R;
+            T_i.translation() = d.t;
+
+            Eigen::Affine3d E = T_i * T_inv; // residual
+
+            const Eigen::Matrix3d &Re = E.linear();
+            d.yaw = std::atan2(Re(1, 0), Re(0, 0));
+            yaw_list.push_back(d.yaw);
+        }
+
+        // yaw 中值过滤（和你原来一致，但针对 residual）
         std::sort(yaw_list.begin(), yaw_list.end());
         double yaw_med = yaw_list[yaw_list.size() / 2];
 
-        const double yaw_thresh = 20.0 * M_PI / 180.0; // 例如 20 度以内保留
         std::vector<LoopRT> filtered;
+        filtered.reserve(data.size());
         for (auto &d : data)
         {
             double diff = std::fabs(d.yaw - yaw_med);
-            // 处理一下 2π 周期
-            if (diff > M_PI)
-                diff = 2 * M_PI - diff;
-
-            if (diff < yaw_thresh)
-                filtered.push_back(d);
+            if (diff > M_PI) diff = 2 * M_PI - diff;
+            if (diff < yaw_thresh) filtered.push_back(d);
         }
 
-        if (!filtered.empty())
-            data.swap(filtered);
-    }
-
-    if (data.empty())
-    {
-        std::cerr << "[estimateSessionTransformFromLoops_STD] All loops filtered out, return Identity.\n";
-        return T_W1_to_W0;
-    }
-
-    // ------- 估计旋转 -------
-    Eigen::Matrix3d R_avg = Eigen::Matrix3d::Identity();
-
-    if (!yaw_only)
-    {
-        // 完整 3D 旋转加权平均（四元数）
-        Eigen::Quaterniond q_ref(data.front().R);
-        Eigen::Vector4d q_sum(0, 0, 0, 0);
-        double w_sum = 0.0;
-
-        for (auto &d : data)
+        if (filtered.empty())
         {
-            Eigen::Quaterniond q_i(d.R);
-            double w = d.w;
-            if (q_ref.dot(q_i) < 0.0)
-                q_i.coeffs() *= -1.0; // 对齐符号，防止 q / -q 抵消
-
-            q_sum += w * q_i.coeffs();
-            w_sum += w;
+            std::cerr << "[estimateSessionTransformFromLoops_STD] All loops filtered out at iter "
+                      << iter << ", break.\n";
+            break;
         }
 
-        q_sum /= std::max(w_sum, 1e-9);
-        Eigen::Quaterniond q_avg(q_sum);
-        q_avg.normalize();
-        R_avg = q_avg.toRotationMatrix();
-    }
-    else
-    {
-        // 只平均 yaw（绕 z），避免 pitch/roll 漂
-        double cos_sum = 0.0, sin_sum = 0.0;
-        double w_sum = 0.0;
+        // ------- 估计增量 Δ（让 T <- Δ * T）-------
+        Eigen::Matrix3d dR = Eigen::Matrix3d::Identity();
+        Eigen::Vector3d dt(0, 0, 0);
 
-        for (auto &d : data)
+        if (!yaw_only)
         {
-            double w = d.w;
-            cos_sum += w * std::cos(d.yaw);
-            sin_sum += w * std::sin(d.yaw);
-            w_sum += w;
+            // 完整 3D：对残差旋转做四元数加权平均
+            // 先取第一条残差作为参考四元数
+            Eigen::Affine3d T0 = Eigen::Affine3d::Identity();
+            T0.linear() = filtered.front().R;
+            T0.translation() = filtered.front().t;
+            Eigen::Affine3d E0 = T0 * T_inv;
+            Eigen::Quaterniond q_ref(E0.linear());
+
+            Eigen::Vector4d q_sum(0, 0, 0, 0);
+            double w_sum = 0.0;
+
+            Eigen::Vector3d t_sum(0, 0, 0);
+            double t_w_sum = 0.0;
+
+            for (auto &d : filtered)
+            {
+                Eigen::Affine3d T_i = Eigen::Affine3d::Identity();
+                T_i.linear() = d.R;
+                T_i.translation() = d.t;
+
+                Eigen::Affine3d E = T_i * T_inv;
+
+                Eigen::Quaterniond q_i(E.linear());
+                double w = d.w;
+                if (q_ref.dot(q_i) < 0.0) q_i.coeffs() *= -1.0;
+
+                q_sum += w * q_i.coeffs();
+                w_sum += w;
+
+                t_sum += w * E.translation();
+                t_w_sum += w;
+            }
+
+            q_sum /= std::max(w_sum, 1e-9);
+            Eigen::Quaterniond q_avg(q_sum);
+            q_avg.normalize();
+            dR = q_avg.toRotationMatrix();
+
+            dt = t_sum / std::max(t_w_sum, 1e-9);
+        }
+        else
+        {
+            // yaw-only：对残差 yaw + 残差平移加权平均
+            double cos_sum = 0.0, sin_sum = 0.0;
+            double w_sum = 0.0;
+
+            Eigen::Vector3d t_sum(0, 0, 0);
+            double t_w_sum = 0.0;
+
+            for (auto &d : filtered)
+            {
+                Eigen::Affine3d T_i = Eigen::Affine3d::Identity();
+                T_i.linear() = d.R;
+                T_i.translation() = d.t;
+
+                Eigen::Affine3d E = T_i * T_inv;
+
+                // 残差 yaw
+                const Eigen::Matrix3d &Re = E.linear();
+                double yaw_e = std::atan2(Re(1, 0), Re(0, 0));
+
+                double w = d.w;
+                cos_sum += w * std::cos(yaw_e);
+                sin_sum += w * std::sin(yaw_e);
+                w_sum += w;
+
+                t_sum += w * E.translation();
+                t_w_sum += w;
+            }
+
+            double yaw_avg = std::atan2(sin_sum, cos_sum);
+            double cy = std::cos(yaw_avg);
+            double sy = std::sin(yaw_avg);
+            dR << cy, -sy, 0,
+                  sy,  cy, 0,
+                   0,   0, 1;
+
+            dt = t_sum / std::max(t_w_sum, 1e-9);
+
+            std::cout << "[estimateSessionTransformFromLoops_STD] iter " << iter
+                      << " use " << filtered.size() << " loops, yaw-only residual:\n"
+                      << "  dyaw (deg) = " << yaw_avg * 180.0 / M_PI
+                      << "  dt = " << dt.transpose() << std::endl;
         }
 
-        double yaw_avg = std::atan2(sin_sum, cos_sum);
+        Eigen::Affine3d dT = Eigen::Affine3d::Identity();
+        dT.linear() = dR;
+        dT.translation() = dt;
 
-        double cy = std::cos(yaw_avg);
-        double sy = std::sin(yaw_avg);
-        R_avg << cy, -sy, 0,
-            sy, cy, 0,
-            0, 0, 1;
+        // 更新：左乘增量
+        T_W1_to_W0 = dT * T_W1_to_W0;
 
-        std::cout << "[estimateSessionTransformFromLoops_STD] use "
-                  << data.size() << " loops, yaw-only:\n"
-                  << "  yaw (deg) = " << yaw_avg * 180.0 / M_PI << std::endl;
+        // ------- 简单收敛判断（最小改动版）-------
+        double ang = std::acos(std::min(1.0, std::max(-1.0, (dR.trace() - 1.0) * 0.5)));
+        double trans = dt.norm();
+        if (ang < 1e-4 && trans < 1e-4)
+        {
+            std::cout << "[estimateSessionTransformFromLoops_STD] converged at iter " << iter << "\n";
+            break;
+        }
     }
 
-    // ------- 估计平移 -------
-    Eigen::Vector3d t_sum(0, 0, 0);
-    double t_w_sum = 0.0;
-    for (auto &d : data)
-    {
-        t_sum += d.w * d.t;
-        t_w_sum += d.w;
-    }
-    Eigen::Vector3d t_avg = t_sum / std::max(t_w_sum, 1e-9);
-
-    T_W1_to_W0 = Eigen::Affine3d::Identity();
-    T_W1_to_W0.linear() = R_avg;
-    T_W1_to_W0.translation() = t_avg;
-
-    std::cout << "[estimateSessionTransformFromLoops_STD] final T_W1_to_W0 (from STD relative poses):\n"
+    std::cout << "[estimateSessionTransformFromLoops_STD] final T_W1_to_W0 (iter refined):\n"
               << T_W1_to_W0.matrix() << std::endl;
 
     return T_W1_to_W0;
 }
+
 
 void visualizeMultiSessionLoop(
     const ros::Publisher &publisher,
