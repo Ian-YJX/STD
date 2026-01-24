@@ -40,7 +40,7 @@ keyframe:
 
 # multisession_mode: 1  
 # save_directory: "/root/catkin_ws/src/STD/std_sessions/session0/"
-inter_session_icp_threshold: 0.55 # real 0.5, simulation 0.55
+inter_session_icp_threshold: 0.5 # real 0.5, simulation 0.55
 
 multi_session:
   mode: 1 #0: disable, 1: offline, 2: online

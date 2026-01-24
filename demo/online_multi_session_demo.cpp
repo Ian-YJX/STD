@@ -32,9 +32,13 @@
 #include "../include/STDesc.h"
 #include "../include/multi_session_util.h"
 #include <fstream>
+#include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
+#include <std_srvs/Trigger.h>
+#include <boost/filesystem.hpp>
 
 typedef pcl::PointXYZRGB PointType;
 typedef pcl::PointCloud<PointType> PointCloud;
+
 
 std::mutex laser_mtx;
 std::mutex odom_mtx;
@@ -217,9 +221,9 @@ int main(int argc, char **argv)
   }
   else
   {
-    ROS_WARN("Failed to load multi_session/initial_T_W1_W0, using default 80m offset.");
-    T_W1_to_W0_est.translation() << 80, 0, 0;
-    T_W1_to_W0_est.rotate(Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitZ()));
+    ROS_WARN("Failed to load multi_session/initial_T_W1_W0, using identity.");
+    // T_W1_to_W0_est.translation() << 80, 0, 0;
+    // T_W1_to_W0_est.rotate(Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitZ()));
   }
 
   std::cout << "Initial Guess T (W1->W0):\n"
@@ -372,6 +376,98 @@ int main(int argc, char **argv)
     tf_msg.transform.rotation.z = q.z();
     tf_br.sendTransform(tf_msg);
   };
+
+  // Service Callback Definition (as a lambda to capture context)
+  auto saveMapLambda = [&](std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res) -> bool
+  {
+    if (keyframes_saved)
+    {
+      res.success = false;
+      res.message = "Map has already been saved.";
+      ROS_WARN_STREAM(res.message);
+      return true;
+    }
+    if (keyframe_pose_vec.empty())
+    {
+      res.success = false;
+      res.message = "No keyframes available to save.";
+      ROS_WARN_STREAM(res.message);
+      return true;
+    }
+
+    keyframes_saved = true;
+    ROS_INFO("Service '/save_map' called, saving keyframe data...");
+    boost::filesystem::create_directories(config_setting.pos_dir_);
+    boost::filesystem::create_directories(config_setting.std_dir_);
+    boost::filesystem::create_directories(config_setting.pcd_dir_);
+
+    string pose_file_name = config_setting.pos_dir_ + "poses.txt";
+    string db_file_name = config_setting.std_dir_ + "std_database.txt";
+    std_manager->saveDatabase(db_file_name);
+    std::ofstream pose_file(pose_file_name);
+
+    for (int i = 0; i < keyframe_pose_vec.size(); ++i)
+    {
+      std::ostringstream oss;
+      oss << std::setw(4) << std::setfill('0') << i;
+      string key_frame_idx = oss.str();
+      pcl::io::savePCDFileBinary(config_setting.pcd_dir_ + key_frame_idx + ".pcd", *std_manager->key_cloud_vec_[i]);
+
+      int global_idx = i * config_setting.sub_frame_num_;
+      if (global_idx < pose_vec.size())
+      {
+        Eigen::Quaterniond q(pose_vec[global_idx].rotation());
+        q.normalize();
+        auto t = pose_vec[global_idx].translation();
+        pose_file << t.x() << ", " << t.y() << "," << t.z() << "," << q.w() << "," << q.x() << "," << q.y() << "," << q.z() << "\n";
+      }
+    }
+    pose_file.close();
+    ROS_INFO("Keyframe saving done!");
+
+    if (curr_estimate.exists(gtsam::Symbol('b', 0)))
+    {
+      // T_W1_to_W0_est = t_estimator->getOptimizedTAsAffine();
+      ROS_INFO("-------------------------------------------------------");
+      ROS_INFO_STREAM("Final Estimated Transform (from T-Estimator): \n"
+                      << T_W1_to_W0_est.matrix());
+      ROS_INFO("-------------------------------------------------------");
+
+      ROS_INFO("Saving aligned global map...");
+      PointCloud final_global_map;
+
+      for (size_t i = 0; i < cloud_vec.size(); ++i)
+      {
+        PointCloud tmp;
+        pcl::transformPointCloud(*cloud_vec[i], tmp, pose_vec[i]);
+        final_global_map += tmp;
+      }
+
+      for (const auto &cloud_ref : ref_keyframe_clouds)
+      {
+        final_global_map += *cloud_ref;
+      }
+
+      down_sampling_voxel(final_global_map, 0.05);
+      std::string aligned_map_file = config_setting.pos_dir_ + "aligned/global_map_W0.pcd";
+      boost::filesystem::create_directories(config_setting.pos_dir_ + "aligned/");
+      pcl::io::savePCDFileBinary(aligned_map_file, final_global_map);
+      ROS_INFO_STREAM("Aligned global map saved to: " << aligned_map_file);
+    }
+
+    res.success = true;
+    res.message = "Map saved successfully.";
+    ROS_INFO_STREAM(res.message);
+
+    return true;
+  };
+
+  boost::function<bool(std_srvs::Trigger::Request &, std_srvs::Trigger::Response &)> saveMapCallback =
+      saveMapLambda;
+
+  // Advertise the service
+  ros::ServiceServer save_map_service = nh.advertiseService("/save_map", saveMapCallback);
+  ROS_INFO("Service /save_map is ready.");
 
   while (ros::ok())
   {
@@ -590,75 +686,7 @@ int main(int argc, char **argv)
     }
     else
     {
-      // Save Logic
-      ros::WallDuration no_data_duration = ros::WallTime::now() - last_data_time;
-      if (!keyframes_saved && !keyframe_pose_vec.empty() && config_setting.keyframe_save_ && no_data_duration.toSec() > 5.0)
-      {
-        keyframes_saved = true;
-        ROS_INFO("saving keyframe ...");
-        boost::filesystem::create_directories(config_setting.pos_dir_);
-        boost::filesystem::create_directories(config_setting.std_dir_);
-        boost::filesystem::create_directories(config_setting.pcd_dir_);
-
-        // Fix: Use separate string variable for saveDatabase
-        string pose_file_name = config_setting.pos_dir_ + "poses.txt";
-        string db_file_name = config_setting.std_dir_ + "std_database.txt";
-        std_manager->saveDatabase(db_file_name);
-        std::ofstream pose_file(pose_file_name);
-
-        for (int i = 0; i < keyframe_pose_vec.size(); ++i)
-        {
-          std::ostringstream oss;
-          oss << std::setw(4) << std::setfill('0') << i;
-          string key_frame_idx = oss.str();
-          pcl::io::savePCDFileBinary(config_setting.pcd_dir_ + key_frame_idx + ".pcd", *std_manager->key_cloud_vec_[i]);
-
-          // Map keyframe index to global pose_vec index (assuming regular subsampling)
-          int global_idx = i * config_setting.sub_frame_num_;
-          if (global_idx < pose_vec.size())
-          {
-            Eigen::Quaterniond q(pose_vec[global_idx].rotation());
-            q.normalize();
-            auto t = pose_vec[global_idx].translation();
-            pose_file << t.x() << ", " << t.y() << "," << t.z() << "," << q.w() << "," << q.x() << "," << q.y() << "," << q.z() << "\n";
-          }
-        }
-        pose_file.close();
-        ROS_INFO("saving done!");
-
-        if (curr_estimate.exists(gtsam::Symbol('b', 0)))
-        {
-          T_W1_to_W0_est = Eigen::Affine3d(curr_estimate.at<gtsam::Pose3>(gtsam::Symbol('b', 0)).matrix());
-
-          ROS_INFO("-------------------------------------------------------");
-          ROS_INFO_STREAM("Final Estimated Transform (b_0 in W0): \n"
-                          << T_W1_to_W0_est.matrix());
-          ROS_INFO("-------------------------------------------------------");
-
-          ROS_INFO("Saving aligned global map...");
-          PointCloud final_global_map;
-
-          for (size_t i = 0; i < cloud_vec.size(); ++i)
-          {
-            PointCloud tmp;
-            pcl::transformPointCloud(*cloud_vec[i], tmp, pose_vec[i]); // Apply optimized Global Pose
-            final_global_map += tmp;
-          }
-
-          for (const auto &cloud_ref : ref_keyframe_clouds)
-          {
-            final_global_map += *cloud_ref;
-          }
-
-          down_sampling_voxel(final_global_map, 0.05);
-          std::string aligned_map_file = config_setting.pos_dir_ + "aligned/global_map_W0.pcd";
-          boost::filesystem::create_directories(config_setting.pos_dir_ + "aligned/");
-          pcl::io::savePCDFileBinary(aligned_map_file, final_global_map);
-          ROS_INFO_STREAM("Aligned global map saved to: " << aligned_map_file);
-        }
-        ros::shutdown();
-        break;
-      }
+      // The old save logic has been removed and replaced by the service call.
     }
   }
   return 0;

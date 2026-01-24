@@ -5,10 +5,9 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
-        - /MarkerArray1
         - /PointCloud25
         - /Odometry1/Shape1
-        - /Path2
+        - /PointCloud29
       Splitter Ratio: 0.5243902206420898
     Tree Height: 871
   - Class: rviz/Selection
@@ -164,18 +163,18 @@ Visualization Manager:
         {}
       Queue Size: 100
       Value: true
-    - Alpha: 0.5
+    - Alpha: 0.10000000149011612
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
+        Max Value: 5.320006847381592
+        Min Value: -0.787166953086853
         Value: true
       Axis: Z
       Channel Name: intensity
       Class: rviz/PointCloud2
       Color: 255; 255; 255
-      Color Transformer: RGB8
-      Decay Time: 10000
+      Color Transformer: AxisColor
+      Decay Time: 0
       Enabled: true
       Invert Rainbow: true
       Max Color: 255; 255; 255
@@ -187,7 +186,7 @@ Visualization Manager:
       Size (Pixels): 1
       Size (m): 0.009999999776482582
       Style: Points
-      Topic: /cloud_registered
+      Topic: /cloud_correct
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
@@ -294,20 +293,20 @@ Visualization Manager:
     - Alpha: 1
       Buffer Length: 1
       Class: rviz/Path
-      Color: 25; 255; 0
+      Color: 255; 0; 0
       Enabled: true
       Head Diameter: 0.30000001192092896
       Head Length: 0.5
       Length: 0.30000001192092896
       Line Style: Billboards
-      Line Width: 0.029999999329447746
+      Line Width: 0.20000000298023224
       Name: Path
       Offset:
         X: 0
         Y: 0
         Z: 0
       Pose Color: 25; 255; 255
-      Pose Style: Arrows
+      Pose Style: None
       Queue Size: 10
       Radius: 0.029999999329447746
       Shaft Diameter: 0.25
@@ -326,23 +325,23 @@ Visualization Manager:
       Class: rviz/PointCloud2
       Color: 255; 255; 255
       Color Transformer: ""
-      Decay Time: 10000
-      Enabled: true
+      Decay Time: 1
+      Enabled: false
       Invert Rainbow: false
       Max Color: 255; 255; 255
       Min Color: 0; 0; 0
       Name: PointCloud2
-      Position Transformer: XYZ
+      Position Transformer: ""
       Queue Size: 10
       Selectable: true
       Size (Pixels): 1
       Size (m): 0.009999999776482582
-      Style: Points
+      Style: Squares
       Topic: /cloud_correct
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
-      Value: true
+      Value: false
     - Class: rviz/Image
       Enabled: false
       Image Topic: /camera/color/image_raw
@@ -358,15 +357,15 @@ Visualization Manager:
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
-        Max Value: -3.0368545055389404
-        Min Value: -5.869050025939941
+        Max Value: 5.237264633178711
+        Min Value: -5.905643939971924
         Value: true
       Axis: Z
       Channel Name: intensity
       Class: rviz/PointCloud2
       Color: 255; 255; 255
       Color Transformer: RGB8
-      Decay Time: 100000
+      Decay Time: 0
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
@@ -375,8 +374,8 @@ Visualization Manager:
       Position Transformer: XYZ
       Queue Size: 10
       Selectable: true
-      Size (Pixels): 1
-      Size (m): 0.10000000149011612
+      Size (Pixels): 4
+      Size (m): 1
       Style: Points
       Topic: /cloud_session0
       Unreliable: false
@@ -392,14 +391,14 @@ Visualization Manager:
       Head Length: 0.5
       Length: 0.30000001192092896
       Line Style: Billboards
-      Line Width: 0.029999999329447746
+      Line Width: 0.20000000298023224
       Name: Path
       Offset:
         X: 0
         Y: 0
         Z: 0
       Pose Color: 25; 255; 255
-      Pose Style: Arrows
+      Pose Style: None
       Queue Size: 10
       Radius: 0.029999999329447746
       Shaft Diameter: 0.25
@@ -435,7 +434,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 129.6879425048828
+      Distance: 64.99470520019531
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -443,9 +442,9 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 40.40961837768555
-        Y: -8.292020797729492
-        Z: 19.15948486328125
+        X: 34.055057525634766
+        Y: -15.654400825500488
+        Z: 19.150386810302734
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
@@ -453,7 +452,7 @@ Visualization Manager:
       Near Clip Distance: 0.009999999776482582
       Pitch: 1.5697963237762451
       Target Frame: <Fixed Frame>
-      Yaw: 3.1949548721313477
+      Yaw: 3.209956645965576
     Saved: ~
 Window Geometry:
   Displays:

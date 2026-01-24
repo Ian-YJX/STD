@@ -4,7 +4,7 @@ project(std_detector)
 ## Compile as C++14
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 SET(CMAKE_BUILD_TYPE "Debug")
 
 message("Current CPU archtecture: ${CMAKE_SYSTEM_PROCESSOR}")
