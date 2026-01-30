@@ -7,8 +7,8 @@ Panels:
         - /Global Options1
         - /MarkerArray1
         - /PointCloud25
+        - /Odometry1
         - /Odometry1/Shape1
-        - /PointCloud28
       Splitter Ratio: 0.5243902206420898
     Tree Height: 550
   - Class: rviz/Selection
@@ -28,7 +28,7 @@ Panels:
   - Class: rviz/Time
     Name: Time
     SyncMode: 0
-    SyncSource: PointCloud2
+    SyncSource: ""
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -38,13 +38,13 @@ Visualization Manager:
   Displays:
     - Alpha: 1
       Class: rviz/Axes
-      Enabled: true
+      Enabled: false
       Length: 0.699999988079071
       Name: Axes
       Radius: 0.05999999865889549
       Reference Frame: <Fixed Frame>
       Show Trail: false
-      Value: true
+      Value: false
     - Alpha: 0.800000011920929
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
@@ -219,7 +219,7 @@ Visualization Manager:
           Value: true
         Value: true
       Enabled: true
-      Keep: 1000000
+      Keep: 0
       Name: Odometry
       Position Tolerance: 0.10000000149011612
       Queue Size: 10

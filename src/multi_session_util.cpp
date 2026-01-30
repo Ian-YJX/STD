@@ -11,7 +11,7 @@ bool loadSessionAndBuildSTD(
     int session_id,
     const std::shared_ptr<STDescManager> &std_manager_ref)
 {
-    ROS_INFO_STREAM("Start loading session" << session_id);
+    ROS_INFO_STREAM("Start loading session " << session_id);
     keyframe_poses.clear();
     keyframe_clouds.clear();
 
