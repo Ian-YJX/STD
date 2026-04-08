@@ -781,11 +781,16 @@ int main(int argc, char **argv)
             T_icp.linear() = ms_loop_transform.second;
             T_icp.translation() = ms_loop_transform.first;
 
-            // predicted relative (ref -> cur) in W0
+            // For inter-session: T_icp is a residual correction in W0 space (near identity
+            // when pre-alignment is good), NOT a relative frame-to-frame pose like in intra-session.
+            // Source cloud was pre-transformed to W0 by T_W1_to_W0_est, so ICP refines this:
+            //   T_W1_to_W0_corrected = T_icp * T_W1_to_W0_est
+            // The measured relative pose (ref -> cur in W0) is:
+            //   T_meas = A_W0^{-1} * T_W1_to_W0_corrected * B_W1
             Eigen::Affine3d T_pred = ref_keyframe_poses_W0[ms_match_kf].inverse() * B_in_W0_guess;
-            Eigen::Affine3d T_meas = chooseMeasClosestToPred(T_pred, T_icp);
+            Eigen::Affine3d T_meas = ref_keyframe_poses_W0[ms_match_kf].inverse() * T_icp * T_W1_to_W0_est * B_guess_W1;
 
-            // consistency gate
+            // consistency gate: T_pred^{-1} * T_meas ≈ I when ICP correction is small
             auto dc = poseDeltaDTDR(T_pred.inverse() * T_meas);
             if (dc.first <= inter_consis_max_trans && dc.second <= inter_consis_max_rot)
             {
@@ -932,20 +937,27 @@ int main(int argc, char **argv)
       Eigen::Affine3d T_W0_to_W1 = T_W1_to_W0_est.inverse();
 
       geometry_msgs::TransformStamped ts;
-      ts.header.stamp = ros::Time::now();
-      ts.header.frame_id = W1_FRAME; // parent fixed
-      ts.child_frame_id = W0_FRAME;  // child moves
+      ros::Time now = ros::Time::now();
+      // Avoid TF_REPEATED_DATA: only publish when timestamp has advanced
+      static ros::Time last_tf_stamp(0);
+      if (now > last_tf_stamp)
+      {
+        last_tf_stamp = now;
+        ts.header.stamp = now;
+        ts.header.frame_id = W1_FRAME; // parent fixed
+        ts.child_frame_id = W0_FRAME;  // child moves
 
-      Eigen::Quaterniond q(T_W0_to_W1.rotation());
-      q.normalize();
-      ts.transform.translation.x = T_W0_to_W1.translation().x();
-      ts.transform.translation.y = T_W0_to_W1.translation().y();
-      ts.transform.translation.z = T_W0_to_W1.translation().z();
-      ts.transform.rotation.w = q.w();
-      ts.transform.rotation.x = q.x();
-      ts.transform.rotation.y = q.y();
-      ts.transform.rotation.z = q.z();
-      tf_br.sendTransform(ts);
+        Eigen::Quaterniond q(T_W0_to_W1.rotation());
+        q.normalize();
+        ts.transform.translation.x = T_W0_to_W1.translation().x();
+        ts.transform.translation.y = T_W0_to_W1.translation().y();
+        ts.transform.translation.z = T_W0_to_W1.translation().z();
+        ts.transform.rotation.w = q.w();
+        ts.transform.rotation.x = q.x();
+        ts.transform.rotation.y = q.y();
+        ts.transform.rotation.z = q.z();
+        tf_br.sendTransform(ts);
+      }
     }
 
     // ------------------------ Publish optimized session1 path (W1) ------------------------

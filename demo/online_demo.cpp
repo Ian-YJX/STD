@@ -17,6 +17,7 @@
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <thread>
+#include <std_srvs/Trigger.h>
 
 #include "include/STDesc.h"
 #include "ros/init.h"
@@ -54,9 +55,9 @@ bool syncPackages(PointCloud::Ptr &cloud, Eigen::Affine3d &pose)
 
   auto odom_msg = odom_buffer.front();
   double odom_timestamp = odom_msg->header.stamp.toSec();
-
+  // std::cout<<odom_timestamp - laser_timestamp <<endl;
   // check if timestamps are matched
-  if (abs(odom_timestamp - laser_timestamp) < 1e-3)
+  if (abs(odom_timestamp - laser_timestamp) < 0.05)
   {
     pcl::fromROSMsg(*laser_msg, *cloud);
 
@@ -217,6 +218,57 @@ int main(int argc, char **argv)
 
   STDescManager *std_manager = new STDescManager(config_setting);
 
+  bool keyframes_saved = false;
+  std::vector<Eigen::Affine3d> keyframe_pose_vec;
+
+  // ---------- save_keyframes lambda (shared by service & auto-save) ----------
+  auto save_keyframes = [&]() -> bool {
+    if (keyframe_pose_vec.empty()) {
+      ROS_WARN("save_keyframes: no keyframes to save");
+      return false;
+    }
+    keyframes_saved = true;
+    ROS_INFO("saving keyframe ...");
+    boost::filesystem::create_directories(config_setting.pos_dir_);
+    boost::filesystem::create_directories(config_setting.std_dir_);
+    boost::filesystem::create_directories(config_setting.pcd_dir_);
+
+    std::string pose_file_name = config_setting.pos_dir_ + "poses.txt";
+    std::string std_file_name  = config_setting.std_dir_ + "std_database.txt";
+    std_manager->saveDatabase(std_file_name);
+
+    std::ofstream pose_file(pose_file_name);
+    for (int i = 0; i < (int)keyframe_pose_vec.size(); ++i) {
+      std::ostringstream oss;
+      oss << std::setw(4) << std::setfill('0') << i;
+      PointCloud correct_cloud = *std_manager->key_cloud_vec_[i];
+      down_sampling_voxel(correct_cloud, 0.05);
+      pcl::io::savePCDFileBinary(config_setting.pcd_dir_ + oss.str() + ".pcd",
+                                 correct_cloud);
+      Eigen::Quaterniond q(keyframe_pose_vec[i].rotation());
+      q.normalize();
+      pose_file << keyframe_pose_vec[i].translation()[0] << ", "
+                << keyframe_pose_vec[i].translation()[1] << ","
+                << keyframe_pose_vec[i].translation()[2] << ","
+                << q.w() << "," << q.x() << "," << q.y() << "," << q.z()
+                << "\n";
+    }
+    pose_file.close();
+    ROS_INFO("saving done!  keyframes: %d", (int)keyframe_pose_vec.size());
+    return true;
+  };
+
+  // ---------- /save_map ROS service ----------
+  ros::ServiceServer save_map_srv = nh.advertiseService<
+      std_srvs::Trigger::Request, std_srvs::Trigger::Response>(
+      "/save_map",
+      [&](std_srvs::Trigger::Request &, std_srvs::Trigger::Response &res) {
+        bool ok = save_keyframes();
+        res.success = ok;
+        res.message = ok ? "keyframes saved" : "no keyframes available";
+        return true;
+      });
+
   gtsam::Values initial;
   gtsam::NonlinearFactorGraph graph;
 
@@ -252,7 +304,6 @@ int main(int argc, char **argv)
   std::vector<Eigen::Affine3d> pose_vec;
   std::vector<Eigen::Affine3d> origin_pose_vec;
   std::vector<Eigen::Affine3d> key_pose_vec; // 回环可视化
-  std::vector<Eigen::Affine3d> keyframe_pose_vec;
   std::vector<std::pair<int, int>> loop_container;
 
   PointCloud::Ptr key_cloud(new PointCloud);
@@ -270,7 +321,6 @@ int main(int argc, char **argv)
   // 使用 WallRate，避免 /use_sim_time + ros::Rate 卡死的问题
   ros::WallRate rate(100.0);
 
-  bool keyframes_saved = false; // 标记是否已经保存过关键帧
   ros::WallTime last_data_time = ros::WallTime::now();
 
   while (ros::ok())
@@ -497,7 +547,7 @@ int main(int argc, char **argv)
     }
     else
     {
-      // ROS_INFO_THROTTLE(1.0, "not syncing"); // 1 秒打印一次，避免刷屏
+      // Auto-save: 5 秒无数据时自动保存（兜底机制）
       ros::WallDuration no_data_duration =
           ros::WallTime::now() - last_data_time;
 
@@ -506,37 +556,7 @@ int main(int argc, char **argv)
           config_setting.keyframe_save_ &&
           no_data_duration.toSec() > 5.0)
       {
-        keyframes_saved = true;
-        ROS_INFO("saving keyframe ...");
-        boost::filesystem::create_directories(config_setting.pos_dir_);
-        boost::filesystem::create_directories(config_setting.std_dir_);
-        boost::filesystem::create_directories(config_setting.pcd_dir_);
-        string pose_file_name = config_setting.pos_dir_ + "poses.txt";
-        string std_file_name = config_setting.std_dir_ + "std_database.txt";
-        std_manager->saveDatabase(std_file_name);
-        std::ofstream pose_file(pose_file_name);
-
-        for (int i = 0; i < keyframe_pose_vec.size(); ++i)
-        {
-          std::ostringstream oss;
-          oss << std::setw(4) << std::setfill('0') << i;
-          string key_frame_idx = oss.str();
-          PointCloud correct_cloud = *std_manager->key_cloud_vec_[i];
-          down_sampling_voxel(correct_cloud, 0.05);
-          pcl::io::savePCDFileBinary(config_setting.pcd_dir_ + key_frame_idx + ".pcd", correct_cloud);
-          Eigen::Quaterniond q(keyframe_pose_vec[i].rotation());
-          q.normalize();
-
-          pose_file << keyframe_pose_vec[i].translation()[0] << ", "
-                    << keyframe_pose_vec[i].translation()[1] << ","
-                    << keyframe_pose_vec[i].translation()[2] << ","
-                    << q.w() << ","
-                    << q.x() << ","
-                    << q.y() << ","
-                    << q.z() << "\n";
-        }
-        pose_file.close();
-        ROS_INFO("saving done!");
+        save_keyframes();
       }
     }
   }
