@@ -1,0 +1,68 @@
+# pre process
+ds_size: 0.1
+maximum_corner_num: 100
+
+# key points
+plane_detection_thre: 0.01
+plane_merge_normal_thre: 0.1
+plane_merge_dis_thre: 0.3
+voxel_size: 2
+voxel_init_num: 10
+proj_image_resolution: 0.5
+proj_dis_min: 0
+proj_dis_max: 5
+corner_thre: 10
+
+
+# std descriptor
+descriptor_near_num: 20
+descriptor_min_len: 2
+descriptor_max_len: 30
+non_max_suppression_radius: 2
+std_side_resolution: 0.2
+
+# candidate search
+skip_near_num: 50
+candidate_num: 50
+sub_frame_num: 10
+vertex_diff_threshold: 0.5
+rough_dis_threshold: 0.01
+normal_threshold: 0.2
+dis_threshold: 0.5
+icp_threshold: 0.7
+
+keyframe:
+  keyframe_save: true
+  pcd_dir: "/root/catkin_ws/src/STD/keyframe/pcd/"
+  std_dir: "/root/catkin_ws/src/STD/keyframe/std/"
+  pos_dir: "/root/catkin_ws/src/STD/keyframe/"
+  # session_id: 1
+
+# multisession_mode: 0
+# save_directory: "/root/catkin_ws/src/STD/std_sessions/session0/"
+inter_session_icp_threshold: 0.4 # real 0.5, simulation 0.55
+
+multi_session:
+  mode: 0 #0: disable, 1: offline, 2: online
+  cur_dir: "/root/catkin_ws/data_yunnan/right/"
+  ref_dir: "/root/catkin_ws/data_yunnan/left/"
+  # cur_dir: "/root/catkin_ws/data_left&middle/left/"
+  # ref_dir: "/root/catkin_ws/data_left&middle/0825/"
+  # warehouse
+  # initial_T_W1_W0: [
+  #   -1.0,  0.0,  0.0, 80.0,
+  #    0.0, -1.0,  0.0,  0.0,
+  #    0.0,  0.0,  1.0,  0.0,
+  #    0.0,  0.0,  0.0,  1.0
+  # ]
+
+  # B2
+  initial_T_W1_W0: [
+    -1.0,  0.0,  0.0, 50.0,
+     0.0, -1.0,  0.0,  20.0,
+     0.0,  0.0,  1.0,  0.0,
+     0.0,  0.0,  0.0,  1.0
+  ]
+  inter_session_max_dist: 30
+  inter_consis_max_trans: 10
+  inter_consis_max_rot: 0.5

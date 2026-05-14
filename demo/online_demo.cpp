@@ -204,6 +204,8 @@ int main(int argc, char **argv)
       nh.advertise<sensor_msgs::PointCloud2>("/cloud_correct", 10000);
   ros::Publisher pubCorrectPath =
       nh.advertise<nav_msgs::Path>("/correct_path", 100000);
+  ros::Publisher pubCorrectedRegistered =
+      nh.advertise<sensor_msgs::PointCloud2>("/cloud_registered_corrected", 100);
 
   ros::Publisher pubOdomOrigin =
       nh.advertise<nav_msgs::Odometry>("/odom_origin", 10);
@@ -220,54 +222,7 @@ int main(int argc, char **argv)
 
   bool keyframes_saved = false;
   std::vector<Eigen::Affine3d> keyframe_pose_vec;
-
-  // ---------- save_keyframes lambda (shared by service & auto-save) ----------
-  auto save_keyframes = [&]() -> bool {
-    if (keyframe_pose_vec.empty()) {
-      ROS_WARN("save_keyframes: no keyframes to save");
-      return false;
-    }
-    keyframes_saved = true;
-    ROS_INFO("saving keyframe ...");
-    boost::filesystem::create_directories(config_setting.pos_dir_);
-    boost::filesystem::create_directories(config_setting.std_dir_);
-    boost::filesystem::create_directories(config_setting.pcd_dir_);
-
-    std::string pose_file_name = config_setting.pos_dir_ + "poses.txt";
-    std::string std_file_name  = config_setting.std_dir_ + "std_database.txt";
-    std_manager->saveDatabase(std_file_name);
-
-    std::ofstream pose_file(pose_file_name);
-    for (int i = 0; i < (int)keyframe_pose_vec.size(); ++i) {
-      std::ostringstream oss;
-      oss << std::setw(4) << std::setfill('0') << i;
-      PointCloud correct_cloud = *std_manager->key_cloud_vec_[i];
-      down_sampling_voxel(correct_cloud, 0.05);
-      pcl::io::savePCDFileBinary(config_setting.pcd_dir_ + oss.str() + ".pcd",
-                                 correct_cloud);
-      Eigen::Quaterniond q(keyframe_pose_vec[i].rotation());
-      q.normalize();
-      pose_file << keyframe_pose_vec[i].translation()[0] << ", "
-                << keyframe_pose_vec[i].translation()[1] << ","
-                << keyframe_pose_vec[i].translation()[2] << ","
-                << q.w() << "," << q.x() << "," << q.y() << "," << q.z()
-                << "\n";
-    }
-    pose_file.close();
-    ROS_INFO("saving done!  keyframes: %d", (int)keyframe_pose_vec.size());
-    return true;
-  };
-
-  // ---------- /save_map ROS service ----------
-  ros::ServiceServer save_map_srv = nh.advertiseService<
-      std_srvs::Trigger::Request, std_srvs::Trigger::Response>(
-      "/save_map",
-      [&](std_srvs::Trigger::Request &, std_srvs::Trigger::Response &res) {
-        bool ok = save_keyframes();
-        res.success = ok;
-        res.message = ok ? "keyframes saved" : "no keyframes available";
-        return true;
-      });
+  std::vector<int> keyframe_end_indices; // cloudInd of the last sub-frame in each keyframe
 
   gtsam::Values initial;
   gtsam::NonlinearFactorGraph graph;
@@ -313,6 +268,66 @@ int main(int argc, char **argv)
 
   Eigen::Affine3d last_pose;
   last_pose.setIdentity();
+
+  // ---------- save_keyframes lambda (shared by service & auto-save) ----------
+  auto save_keyframes = [&]() -> bool {
+    if (keyframe_end_indices.empty()) {
+      ROS_WARN("save_keyframes: no keyframes to save");
+      return false;
+    }
+    keyframes_saved = true;
+    ROS_INFO("saving keyframe (PGO-optimized) ...");
+    boost::filesystem::create_directories(config_setting.pos_dir_);
+    boost::filesystem::create_directories(config_setting.std_dir_);
+    boost::filesystem::create_directories(config_setting.pcd_dir_);
+
+    std::string pose_file_name = config_setting.pos_dir_ + "poses.txt";
+    std::string std_file_name  = config_setting.std_dir_ + "std_database.txt";
+    std_manager->saveDatabase(std_file_name);
+
+    std::ofstream pose_file(pose_file_name);
+    for (int i = 0; i < (int)keyframe_end_indices.size(); ++i) {
+      std::ostringstream oss;
+      oss << std::setw(4) << std::setfill('0') << i;
+
+      // Reconstruct keyframe cloud using PGO-optimized poses
+      int start_idx = (i == 0) ? 0 : keyframe_end_indices[i - 1] + 1;
+      int end_idx = keyframe_end_indices[i];
+      PointCloud correct_cloud;
+      for (int j = start_idx; j <= end_idx && j < (int)cloud_vec.size(); ++j) {
+        PointCloud sub;
+        pcl::transformPointCloud(*cloud_vec[j], sub, pose_vec[j]);
+        correct_cloud += sub;
+      }
+      down_sampling_voxel(correct_cloud, 0.05);
+      pcl::io::savePCDFileBinary(config_setting.pcd_dir_ + oss.str() + ".pcd",
+                                 correct_cloud);
+
+      // Use PGO-optimized pose for this keyframe
+      Eigen::Affine3d opt_pose = pose_vec[end_idx];
+      Eigen::Quaterniond q(opt_pose.rotation());
+      q.normalize();
+      pose_file << opt_pose.translation()[0] << ", "
+                << opt_pose.translation()[1] << ","
+                << opt_pose.translation()[2] << ","
+                << q.w() << "," << q.x() << "," << q.y() << "," << q.z()
+                << "\n";
+    }
+    pose_file.close();
+    ROS_INFO("saving done!  keyframes: %d", (int)keyframe_end_indices.size());
+    return true;
+  };
+
+  // ---------- /save_map ROS service ----------
+  ros::ServiceServer save_map_srv = nh.advertiseService<
+      std_srvs::Trigger::Request, std_srvs::Trigger::Response>(
+      "/save_map",
+      [&](std_srvs::Trigger::Request &, std_srvs::Trigger::Response &res) {
+        bool ok = save_keyframes();
+        res.success = ok;
+        res.message = ok ? "keyframes saved" : "no keyframes available";
+        return true;
+      });
 
   // 启动异步 spinner（放在 while 外）
   ros::AsyncSpinner spinner(2);
@@ -417,6 +432,7 @@ int main(int argc, char **argv)
 
         std_manager->key_cloud_vec_.push_back(key_cloud->makeShared());
         keyframe_pose_vec.push_back(pose);
+        keyframe_end_indices.push_back(cloudInd);
         if (search_result.first > 0)
         {
           std::cout << "[Loop Detection] triggle loop: " << keyCloudInd << "--"
@@ -503,11 +519,22 @@ int main(int argc, char **argv)
       curr_estimate = isam.calculateEstimate();
       update_poses(curr_estimate, pose_vec);
 
+      // Publish current frame with PGO-corrected pose (per-frame corrected cloud)
+      {
+        PointCloud corrected_frame;
+        pcl::transformPointCloud(*current_cloud_body, corrected_frame, pose_vec[cloudInd]);
+        sensor_msgs::PointCloud2 pub_cloud;
+        pcl::toROSMsg(corrected_frame, pub_cloud);
+        pub_cloud.header.frame_id = "camera_init";
+        pub_cloud.header.stamp = ros::Time::now();
+        pubCorrectedRegistered.publish(pub_cloud);
+      }
+
       if (has_loop_flag)
       {
-        // publish correct cloud map
+        // publish correct cloud map (full retransformed map, only on loop detection)
         PointCloud full_map;
-        for (int i = 0; i < pose_vec.size(); ++i)
+        for (int i = 0; i < (int)pose_vec.size(); ++i)
         {
           PointCloud correct_cloud;
           pcl::transformPointCloud(*cloud_vec[i], correct_cloud, pose_vec[i]);
@@ -517,12 +544,13 @@ int main(int argc, char **argv)
         pcl::toROSMsg(full_map, pub_cloud);
         pub_cloud.header.frame_id = "camera_init";
         pubCorrectCloud.publish(pub_cloud);
+      }
 
-        // publish corerct path
+      // Always publish corrected path (uses current PGO-optimized estimates)
+      {
         nav_msgs::Path correct_path;
-        for (int i = 0; i < pose_vec.size(); i += 1)
+        for (int i = 0; i < (int)pose_vec.size(); i += 1)
         {
-
           geometry_msgs::PoseStamped msg_pose;
           msg_pose.pose.position.x = pose_vec[i].translation()[0];
           msg_pose.pose.position.y = pose_vec[i].translation()[1];
@@ -552,7 +580,7 @@ int main(int argc, char **argv)
           ros::WallTime::now() - last_data_time;
 
       if (!keyframes_saved &&
-          !keyframe_pose_vec.empty() &&
+          !keyframe_end_indices.empty() &&
           config_setting.keyframe_save_ &&
           no_data_duration.toSec() > 5.0)
       {
