@@ -82,11 +82,33 @@ static inline double yawFromRot(const Eigen::Matrix3d &R)
   return std::atan2(R(1, 0), R(0, 0));
 }
 
+static inline double rad2deg(double rad)
+{
+  return rad * 180.0 / M_PI;
+}
+
 static inline std::pair<double, double> poseDeltaDTDR(const Eigen::Affine3d &Td)
 {
   double dt = Td.translation().norm();
   double dr = Eigen::AngleAxisd(Td.linear()).angle();
   return std::make_pair(dt, dr);
+}
+
+static inline void printTransformErrorToInitial(
+    const Eigen::Affine3d &T_initial,
+    const Eigen::Affine3d &T_current,
+    const std::string &name)
+{
+  Eigen::Affine3d T_err = T_initial.inverse() * T_current;
+  Eigen::Vector3d dt = T_err.translation();
+  double dr = Eigen::AngleAxisd(T_err.linear()).angle();
+  double dyaw = wrapToPi(yawFromRot(T_current.rotation()) - yawFromRot(T_initial.rotation()));
+
+  ROS_INFO("[%s Error vs Initial] translation=(%.6f, %.6f, %.6f) norm=%.6f m, rotation=%.6f rad (%.3f deg), yaw=%.6f rad (%.3f deg)",
+           name.c_str(), dt.x(), dt.y(), dt.z(), dt.norm(), dr, rad2deg(dr), dyaw, rad2deg(dyaw));
+  ROS_INFO_STREAM("[" << name << " Initial]\n" << T_initial.matrix());
+  ROS_INFO_STREAM("[" << name << " Current]\n" << T_current.matrix());
+  ROS_INFO_STREAM("[" << name << " Initial^-1 * Current]\n" << T_err.matrix());
 }
 
 static inline Eigen::Affine3d chooseMeasClosestToPred(const Eigen::Affine3d &T_pred, const Eigen::Affine3d &T_icp)
@@ -324,6 +346,7 @@ int main(int argc, char **argv)
   {
     ROS_WARN("Failed to load multi_session/initial_T_W1_W0, using identity.");
   }
+  const Eigen::Affine3d T_W1_to_W0_initial = T_W1_to_W0_est;
 
   // ------------------------ Multi-session gating & T update params (const) ------------------------
   double inter_session_max_dist = 30.0; // meters (distance gate in W0)
@@ -453,6 +476,8 @@ int main(int argc, char **argv)
       ROS_WARN_STREAM(res.message);
       return true;
     }
+
+    printTransformErrorToInitial(T_W1_to_W0_initial, T_W1_to_W0_est, "T_W1_to_W0");
 
     const std::string out_root = config_setting.cur_dir_; // to match loader expectation
     const std::string out_pcd_dir = out_root + "pcd/";
