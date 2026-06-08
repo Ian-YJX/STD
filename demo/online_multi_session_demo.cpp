@@ -234,7 +234,7 @@ int main(int argc, char **argv)
   auto priorNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-2, 1e-2, M_PI * M_PI, 1e8, 1e8, 1e8).finished());
 
   auto s1StartPriorNoise = gtsam::noiseModel::Diagonal::Variances(
-      (gtsam::Vector(6) << 10.0, 10.0, 10.0, 10000.0, 10000.0, 10000.0).finished());
+      (gtsam::Vector(6) << 50.0, 50.0, 50.0, 10000.0, 10000.0, 10000.0).finished());
 
   double intraScore = 0.01;
   gtsam::Vector robustNoiseVector6(6);
@@ -243,7 +243,7 @@ int main(int argc, char **argv)
       gtsam::noiseModel::mEstimator::Cauchy::Create(1),
       gtsam::noiseModel::Diagonal::Variances(robustNoiseVector6));
 
-  double interScore = 0.001;
+  double interScore = 1e-3;
   auto interLoopNoise = gtsam::noiseModel::Robust::Create(
       gtsam::noiseModel::mEstimator::Cauchy::Create(1),
       gtsam::noiseModel::Diagonal::Variances(gtsam::Vector6::Constant(interScore)));

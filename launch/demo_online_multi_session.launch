@@ -3,16 +3,15 @@
 
   <arg name="rviz" default="true" />
   <rosparam command="load" file="$(find std_detector)/config/config_online.yaml" />
-  <group if="$(arg rviz)">
+  <!-- <group if="$(arg rviz)">
     <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz_std" args="-d $(find std_detector)/rviz_cfg/online_ms.rviz" />
-  </group>
+  </group> -->
 
   <node
 		pkg="std_detector"
 		type="online_multi_session_demo"
 		name="online_multi_session_demo"
 		output="screen"
-    launch-prefix="gdb -ex run --args"
 	/>
 
 </launch>
